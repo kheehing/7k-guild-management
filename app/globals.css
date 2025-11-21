@@ -2,27 +2,157 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* THEME SEEDS — edit these five hex values to change your site theme */
+:root{
+  /* brightened, royal-leaning seeds — edit these for global theme */
+  --seed-1: #1f2937; /* slate / grounded base */
+  --seed-2: #6b21a8; /* royal purple (brand accent) */
+  --seed-3: #c59d5f; /* warm gold (accent/highlight) */
+  --seed-4: #9aa0a6; /* muted pewter */
+  --seed-5: #8b1e2a; /* deep crimson */
+
+  --color-primary: var(--seed-2);
+  --color-secondary: var(--seed-3);
+  --color-accent: var(--seed-3);
+  --color-muted: var(--seed-4);
+  --color-alert: var(--seed-5);
+
+  /* brighten the light theme for a royal / noble vibe */
+  --color-bg: #f6f3fb;        /* pale lavender page bg */
+  --color-surface: #ffffff;   /* cards / panels */
+  --color-foreground: #0b1220;/* text */
+  --color-border: rgba(11,18,32,0.06);
+  --radius-md: 0.5rem;
+  --radius-sm: 0.375rem;
+  --glass: rgba(255,255,255,0.7);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
+/* Dark mode tweaks: royal / noble near-black palette */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* core seeds (adjust if you want different accent hues) */
+    --seed-1: #030303; /* ink black */
+    --seed-2: #4b2b6b; /* royal purple */
+    --seed-3: #b6872f; /* warm gold */
+    --seed-4: #585a5f; /* pewter for muted elements */
+    --seed-5: #6f1e24; /* deep crimson for alerts */
+
+    /* semantic tokens for dark mode */
+    --color-bg: #040406;           /* page background - near black */
+    --color-surface: #0a0a0d;      /* panels / cards - slight lift */
+    --color-foreground: #f6efe6;   /* warm off-white text */
+    --color-muted: #9ea4aa;        /* secondary text / placeholders */
+    --color-border: rgba(246,239,230,0.06); /* subtle light border */
+    --glass: rgba(246,239,230,0.03);
+
+    /* accent mapping */
+    --color-primary: var(--seed-2);
+    --color-accent: var(--seed-3);
+    --color-alert: var(--seed-5);
   }
+
+  /* dark-mode surface / login card tweaks */
+  .surface {
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));
+    border: 1px solid var(--color-border);
+    color: var(--color-foreground);
+    box-shadow: 0 8px 30px rgba(2,4,6,0.6);
+  }
+
+  .login-card {
+    background-image: linear-gradient(135deg, rgba(75,43,107,0.06), rgba(182,135,47,0.03));
+    border-left: 4px solid var(--color-accent);
+    padding: 1.25rem;
+    border-radius: 0.75rem;
+    box-shadow: 0 18px 40px rgba(3,4,6,0.6);
+  }
+
+  /* primary button tuned for dark royal vibe */
+  .btn-primary {
+    background-image: linear-gradient(90deg, var(--color-primary), color-mix(in srgb, var(--color-accent) 30%, black));
+    color: var(--color-foreground);
+    box-shadow: 0 8px 24px rgba(75,43,107,0.18);
+    border: 1px solid rgba(255,255,255,0.03);
+  }
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 36px rgba(75,43,107,0.24);
+  }
+
+  /* inputs tuned for dark */
+  input, textarea, select {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.03);
+    color: var(--color-foreground);
+  }
+  input::placeholder { color: var(--color-muted); }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Basic page styles using tokens */
+html, body, #__next {
+  height: 100%;
+  background-color: var(--color-bg);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+/* Surface/card */
+.surface {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-foreground);
+  box-shadow: 0 6px 22px rgba(16, 24, 40, 0.06);
+}
+
+/* special login card variant to add subtle regal tint */
+.login-card {
+  background-image: linear-gradient(135deg, rgba(107,33,168,0.04), rgba(197,157,95,0.02));
+  border-left: 4px solid var(--color-secondary);
+  padding: 1.25rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 8px 32px rgba(17, 24, 39, 0.06);
+}
+
+/* Utility helpers you can use in markup (Tailwind users can also use arbitrary values like bg-[var(--color-primary)]) */
+.bg-primary { background-color: var(--color-primary) !important; }
+.text-primary { color: var(--color-primary) !important; }
+.border-primary { border-color: var(--color-primary) !important; }
+
+.bg-secondary { background-color: var(--color-secondary) !important; }
+.text-secondary { color: var(--color-secondary) !important; }
+
+.bg-accent { background-color: var(--color-accent) !important; }
+.text-accent { color: var(--color-accent) !important; }
+
+.text-muted { color: var(--color-muted) !important; }
+.text-alert { color: var(--color-alert) !important; }
+
+/* Enhanced surface and button styles for a brighter royal login look */
+.btn-primary {
+  background-image: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+  color: white;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 6px 18px rgba(107,33,168,0.08);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 30px rgba(107,33,168,0.12); }
+
+/* subtle input styles to match theme */
+input, textarea, select {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-foreground);
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  outline: none;
+}
+input::placeholder { color: var(--color-muted); }
+
+/* usage note:
+ - Add class "login-card" to the login container (page.tsx) to apply the brighter royal styling.
+ - Buttons already use .btn-primary; you can keep using that class.
+*/

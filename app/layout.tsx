@@ -2,8 +2,8 @@
 import "./globals.css"; // Tailwind
 
 export const metadata = {
-  title: "Guild Dashboard",
-  description: "Guild member tracking",
+  title: "Ap0theosis",
+  description: "Guild management",
   robots: { index: false, follow: false },
 };
 

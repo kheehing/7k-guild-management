@@ -1,0 +1,17 @@
+"use client";
+
+import { useEffect } from "react";
+import Sidebar from "../components/Sidebar";
+
+export default function Page() {
+  return (
+    <div className="flex h-screen">
+      {/* Sidebar */}
+      <Sidebar>
+      <h1 className="text-3xl font-bold">Welcome to My Dashboard sadasdasdadads</h1>
+      <p className="mt-4">You can put any page content here.</p>
+      </Sidebar>
+
+    </div> 
+  );
+}
