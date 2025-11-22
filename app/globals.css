@@ -73,10 +73,12 @@
     color: var(--color-foreground);
     box-shadow: 0 8px 24px rgba(75,43,107,0.18);
     border: 1px solid rgba(255,255,255,0.03);
+    transition: transform .12s ease, box-shadow .12s ease, background-image .12s ease;
   }
   .btn-primary:hover {
     transform: translateY(-1px);
     box-shadow: 0 14px 36px rgba(75,43,107,0.24);
+    background-image: linear-gradient(90deg, #2d1a40, #6b4e1f);
   }
 
   /* inputs tuned for dark */
@@ -137,9 +139,13 @@ html, body, #__next {
   border-radius: var(--radius-sm);
   border: 1px solid rgba(0,0,0,0.06);
   box-shadow: 0 6px 18px rgba(107,33,168,0.08);
-  transition: transform .12s ease, box-shadow .12s ease;
+  transition: transform .12s ease, box-shadow .12s ease, background-image .12s ease;
 }
-.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 30px rgba(107,33,168,0.12); }
+.btn-primary:hover { 
+  transform: translateY(-1px); 
+  box-shadow: 0 10px 30px rgba(107,33,168,0.12);
+  background-image: linear-gradient(90deg, #4b1575, #8f6e28);
+}
 
 /* subtle input styles to match theme */
 input, textarea, select {
@@ -156,3 +162,43 @@ input::placeholder { color: var(--color-muted); }
  - Add class "login-card" to the login container (page.tsx) to apply the brighter royal styling.
  - Buttons already use .btn-primary; you can keep using that class.
 */
+
+/* Custom scrollbar styling - minimal bar only */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-muted);
+  border-radius: 4px;
+  opacity: 0.5;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-foreground);
+  opacity: 0.7;
+}
+
+/* Firefox scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-muted) transparent;
+}
+
+/* Custom select dropdown styling */
+select option {
+  background-color: rgba(128, 128, 128, 0.2);
+  color: var(--color-foreground);
+}
+
+@media (prefers-color-scheme: dark) {
+  select option {
+    background-color: rgba(30, 30, 30, 1);
+    color: var(--color-foreground);
+  }
+}

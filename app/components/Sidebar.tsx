@@ -1,17 +1,18 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { FaSignOutAlt, FaSearch, FaPlus, FaTimes } from "react-icons/fa";
+import React, { useEffect, useMemo, useState, useCallback, memo } from "react";
+import { FaSignOutAlt, FaSearch, FaPlus } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
+import AddMemberForm from "./AddMemberForm";
 
 interface Member {
   id: string;
   name: string;
   role?: string;
-  groups?: string | null;
   created_at?: string;
-  log_by?: string;
+  logger_id?: string;
+  kicked?: boolean;
   [key: string]: any;
 }
 
@@ -24,13 +25,8 @@ export default function Sidebar({ children }: SidebarProps) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-  // modal state + form
+  // modal state
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState("");
-  const [newGroups, setNewGroups] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // sign-out state & router
   const [signingOut, setSigningOut] = useState(false);
@@ -46,17 +42,12 @@ export default function Sidebar({ children }: SidebarProps) {
         if (!res.ok) throw new Error("Failed to fetch members");
         const json = await res.json();
         if (!cancelled) {
-          setMembers(Array.isArray(json) ? json : json.members ?? []);
+          const memberData = Array.isArray(json) ? json : json.members ?? [];
+          console.log("Loaded members:", memberData);
+          setMembers(memberData);
         }
       } catch (err) {
-        if (!cancelled) {
-          // fallback sample members
-          setMembers([
-            { id: "1", name: "Member1", role: "Healer", groups: null },
-            { id: "2", name: "Member2", role: "DPS", groups: null },
-            { id: "3", name: "Member3", role: "Tank", groups: null },
-          ]);
-        }
+        console.error("Error loading members:", err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -68,58 +59,77 @@ export default function Sidebar({ children }: SidebarProps) {
     };
   }, []);
 
+
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return members;
-    return members.filter((m) => (m.name ?? "").toLowerCase().includes(q));
+    // Filter out kicked members (kicked === true), keep members where kicked is false or null/undefined
+    const activeMembers = members.filter((m) => m.kicked !== true);
+    
+    // Apply search filter
+    const searchFiltered = !q 
+      ? activeMembers 
+      : activeMembers.filter((m) => (m.name ?? "").toLowerCase().includes(q));
+    
+    // Sort: non-Members first, then by role alphabetically, then by name alphabetically
+    return searchFiltered.sort((a, b) => {
+      const roleA = (a.role ?? "Member").toLowerCase();
+      const roleB = (b.role ?? "Member").toLowerCase();
+      const nameA = (a.name ?? "").toLowerCase();
+      const nameB = (b.name ?? "").toLowerCase();
+      
+      // Check if roles are "member"
+      const isAMember = roleA === "member";
+      const isBMember = roleB === "member";
+      
+      // Non-members come first
+      if (isAMember && !isBMember) return 1;
+      if (!isAMember && isBMember) return -1;
+      
+      // If both are members or both are non-members, sort by role alphabetically
+      if (roleA !== roleB) {
+        return roleA.localeCompare(roleB);
+      }
+      
+      // If roles are the same, sort by name alphabetically
+      return nameA.localeCompare(nameB);
+    });
   }, [members, search]);
 
-  function openProfile(m: Member) {
+  const openProfile = useCallback((m: Member) => {
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("openProfile", { detail: m }));
     }
-  }
+  }, []);
 
-  async function handleAddMember(e?: React.FormEvent) {
-    e?.preventDefault();
-    setError(null);
-    const name = newName.trim();
-    const role = newRole.trim() || "Member";
-    const groups = newGroups.trim() || null;
-    if (!name) {
-      setError("Name is required");
+  const handleMemberAdded = useCallback((member: Member) => {
+    setMembers((s) => [member, ...s]);
+  }, []);
+
+  const handleKickMember = useCallback(async (memberId: string, memberName: string) => {
+    if (!confirm(`Are you sure you want to kick ${memberName}?`)) {
       return;
     }
 
-    setSubmitting(true);
     try {
-      const res = await fetch("/api/members", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, role, groups, log_by: "web" }),
-      });
+      const { error } = await supabase
+        .from("members")
+        .update({ kicked: true })
+        .eq("id", memberId);
 
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(txt || "Failed to add member");
+      if (error) {
+        throw new Error(`Failed to kick member: ${error.message}`);
       }
 
-      const created = await res.json();
-      // assume API returns created member or { id, name, role }
-      const member: Member = Array.isArray(created) ? created[0] : created;
-      setMembers((s) => [member, ...s]);
-      setNewName("");
-      setNewRole("");
-      setNewGroups("");
-      setIsAddOpen(false);
+      // Update local state to reflect the kick
+      setMembers((s) => s.map((m) => m.id === memberId ? { ...m, kicked: true } : m));
     } catch (err: any) {
-      setError(err?.message ?? "Failed to add member");
-    } finally {
-      setSubmitting(false);
+      console.error("Error kicking member:", err);
+      alert(err?.message ?? "Failed to kick member");
     }
-  }
+  }, []);
 
-  async function handleSignOut() {
+  const handleSignOut = useCallback(async () => {
     try {
       setSigningOut(true);
       const { error } = await supabase.auth.signOut();
@@ -133,7 +143,7 @@ export default function Sidebar({ children }: SidebarProps) {
     } finally {
       setSigningOut(false);
     }
-  }
+  }, [router]);
 
   return (
     <div className="flex h-screen w-full">
@@ -187,13 +197,19 @@ export default function Sidebar({ children }: SidebarProps) {
             <button
               aria-label="Add member"
               onClick={() => setIsAddOpen(true)}
-              className="ml-1 p-2 rounded-md"
+              className="ml-1 p-2 rounded-md transition-all"
               style={{
                 backgroundColor: "var(--color-primary)",
                 color: "white",
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--color-primary)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--color-primary)";
               }}
             >
               <FaPlus />
@@ -208,31 +224,55 @@ export default function Sidebar({ children }: SidebarProps) {
             <div className="px-3 text-sm text-slate-500">No members found</div>
           ) : (
             filtered.map((m) => (
-              <button
+              <div
                 key={m.id}
-                onClick={() => openProfile(m)}
-                className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md transition-colors hover:bg-[rgba(0,0,0,0.03)]"
-                style={{ color: "var(--color-foreground)" }}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-md transition-colors group"
+                style={{
+                  transition: "background-color 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "rgba(128,128,128,0.15)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }}
               >
-                <div
-                  className="h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium"
-                  style={{
-                    backgroundColor: "var(--seed-4)",
-                    color: "var(--color-foreground)",
-                  }}
+                <button
+                  onClick={() => openProfile(m)}
+                  className="flex-1 text-left select-none"
+                  style={{ color: "var(--color-foreground)" }}
                 >
-                  {m.name?.charAt(0) ?? "?"}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{m.name}</div>
-                  <div
-                    className="text-xs truncate"
-                    style={{ color: "var(--color-muted)" }}
-                  >
-                    {m.role ?? "Member"}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{m.name}</div>
+                    <div
+                      className="text-xs truncate"
+                      style={{ color: "var(--color-muted)" }}
+                    >
+                      {m.role ?? "Member"}
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleKickMember(m.id, m.name);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 px-2 py-1 text-xs rounded transition-opacity"
+                  style={{
+                    backgroundColor: "var(--color-primary)",
+                    color: "white",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-primary)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-primary)";
+                  }}
+                  aria-label={`Kick ${m.name}`}
+                >
+                  Kick
+                </button>
+              </div>
             ))
           )}
         </nav>
@@ -264,117 +304,12 @@ export default function Sidebar({ children }: SidebarProps) {
       </main>
 
       {/* Add Member Modal */}
-      {isAddOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          aria-modal="true"
-          role="dialog"
-        >
-          <div
-            className="absolute inset-0"
-            onClick={() => !submitting && setIsAddOpen(false)}
-            style={{ background: "rgba(0,0,0,0.4)" }}
-          />
-          <form
-            onSubmit={handleAddMember}
-            className="relative z-10 w-full max-w-md p-6 rounded-md"
-            style={{
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              color: "var(--color-foreground)",
-            }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium">Add Member</h3>
-              <button
-                type="button"
-                onClick={() => !submitting && setIsAddOpen(false)}
-                className="p-2 rounded"
-                aria-label="Close"
-                style={{ color: "var(--color-foreground)" }}
-              >
-                <FaTimes />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm mb-1">Name</label>
-                <input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="w-full px-3 py-2 rounded border"
-                  placeholder="Member name"
-                  required
-                  style={{
-                    background: "transparent",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-foreground)",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm mb-1">Role</label>
-                <input
-                  value={newRole}
-                  onChange={(e) => setNewRole(e.target.value)}
-                  className="w-full px-3 py-2 rounded border"
-                  placeholder="e.g. DPS, Healer"
-                  style={{
-                    background: "transparent",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-foreground)",
-                  }}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm mb-1">Groups</label>
-                <input
-                  value={newGroups}
-                  onChange={(e) => setNewGroups(e.target.value)}
-                  className="w-full px-3 py-2 rounded border"
-                  placeholder="comma-separated groups"
-                  style={{
-                    background: "transparent",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-foreground)",
-                  }}
-                />
-              </div>
-
-              {error && <div className="text-sm text-red-500">{error}</div>}
-            </div>
-
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => !submitting && setIsAddOpen(false)}
-                className="px-3 py-2 rounded"
-                style={{
-                  border: "1px solid var(--color-border)",
-                  color: "var(--color-foreground)",
-                }}
-                disabled={submitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 rounded"
-                style={{
-                  backgroundColor: "var(--color-primary)",
-                  color: "white",
-                }}
-                disabled={submitting}
-              >
-                {submitting ? "Adding…" : "Add Member"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      <AddMemberForm
+        isOpen={isAddOpen}
+        onClose={() => setIsAddOpen(false)}
+        onMemberAdded={handleMemberAdded}
+      />
     </div>
   );
 }
+
