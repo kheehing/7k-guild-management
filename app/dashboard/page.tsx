@@ -8,6 +8,7 @@ import MemberProfile from "../components/MemberProfile";
 // Lazy load tab components for better performance
 const OverviewTab = lazy(() => import("../components/tabs/OverviewTab"));
 const MembersTab = lazy(() => import("../components/tabs/MembersTab"));
+const AnalysisTab = lazy(() => import("../components/tabs/AnalysisTab"));
 const CastleRushTab = lazy(() => import("../components/tabs/CastleRushTab"));
 const SettingsTab = lazy(() => import("../components/tabs/SettingsTab"));
 const AdventTab = lazy(() => import("../components/tabs/AdventTab"));
@@ -32,6 +33,12 @@ export default function Page() {
     setSelectedMember(null);
   }, []);
 
+  const handleUpdateMember = useCallback((updatedMember: Member) => {
+    setSelectedMember(updatedMember);
+    // Trigger a refresh of the sidebar member list
+    window.dispatchEvent(new CustomEvent("memberUpdated"));
+  }, []);
+
   useEffect(() => {
     window.addEventListener("openProfile", handleOpenProfile as EventListener);
     return () => window.removeEventListener("openProfile", handleOpenProfile as EventListener);
@@ -40,6 +47,7 @@ export default function Page() {
   const tabs = [
     { id: "overview", label: "Overview" },
     { id: "members", label: "Members" },
+    { id: "analysis", label: "Analysis" },
     { id: "CastleRush", label: "CastleRush" },
     { id: "advent", label: "Advent" },
     { id: "settings", label: "Settings" },
@@ -49,7 +57,11 @@ export default function Page() {
     <div className="flex h-screen">
       <Sidebar>
         {selectedMember ? (
-          <MemberProfile member={selectedMember} onBack={handleBackFromProfile} />
+          <MemberProfile 
+            member={selectedMember} 
+            onBack={handleBackFromProfile}
+            onUpdate={handleUpdateMember}
+          />
         ) : (
           <>
             <TabNavigation 
@@ -66,6 +78,7 @@ export default function Page() {
               }>
                 {activeTab === "overview" && <OverviewTab />}
                 {activeTab === "members" && <MembersTab />}
+                {activeTab === "analysis" && <AnalysisTab />}
                 {activeTab === "CastleRush" && <CastleRushTab />}
                 {activeTab === "advent" && <AdventTab />}
                 {activeTab === "settings" && <SettingsTab />}

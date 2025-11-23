@@ -14,61 +14,54 @@ interface CastleRushEntryModalProps {
   isOpen: boolean;
   onClose: () => void;
   days: string[];
+  editEntryId?: string | null;
 }
 
 interface CastleInfo {
   day: string;
   boss: string;
   castle: string;
-  recommendation: string[];
 }
 
 const CASTLE_SCHEDULE: Record<number, CastleInfo> = {
   1: { // Monday
     day: "Monday",
     boss: "Rudy",
-    castle: "Guardian's Castle",
-    recommendation: ["Magic", "Attacks 3-4 enemies"]
+    castle: "Guardian's Castle"
   },
   2: { // Tuesday
     day: "Tuesday",
     boss: "Eileene",
-    castle: "Fodina Castle",
-    recommendation: ["Magic", "Attacks 3-4 enemies"]
+    castle: "Fodina Castle"
   },
   3: { // Wednesday
     day: "Wednesday",
     boss: "Rachel",
-    castle: "Immortal Castle",
-    recommendation: ["Magic", "Attacks 3-4 enemies"]
+    castle: "Immortal Castle"
   },
   4: { // Thursday
     day: "Thursday",
     boss: "Dellons",
-    castle: "Death Castle",
-    recommendation: ["Physical", "Attacks 3-4 enemies"]
+    castle: "Death Castle"
   },
   5: { // Friday
     day: "Friday",
     boss: "Jave",
-    castle: "Ancient Dragon's Castle",
-    recommendation: ["Physical", "Attacks 3-4 enemies"]
+    castle: "Ancient Dragon's Castle"
   },
   6: { // Saturday
     day: "Saturday",
     boss: "Spike",
-    castle: "Blizzard Castle",
-    recommendation: ["Physical", "Attacks 3-4 enemies"]
+    castle: "Blizzard Castle"
   },
   0: { // Sunday
     day: "Sunday",
     boss: "Kris",
-    castle: "Hell Castle",
-    recommendation: ["Any", "Single-target"]
+    castle: "Hell Castle"
   }
 };
 
-export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRushEntryModalProps) {
+export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryId }: CastleRushEntryModalProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState("");
@@ -76,23 +69,137 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
   const [entries, setEntries] = useState<Record<string, string>>({});
   const [showAllMembers, setShowAllMembers] = useState(false);
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
-  const [excludedMembers, setExcludedMembers] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [existingEntryId, setExistingEntryId] = useState<string | null>(null);
+
+  const loadExistingEntry = useCallback(async (entryId: string) => {
+    setLoading(true);
+    setExistingEntryId(entryId);
+    try {
+      // Fetch the castle rush entry
+      const { data: castleRush, error: crError } = await supabase
+        .from('castle_rush')
+        .select('*')
+        .eq('id', entryId)
+        .single();
+
+      if (crError) throw crError;
+
+      // Set the date and castle info
+      setSelectedDate(castleRush.date);
+      const date = new Date(castleRush.date + 'T00:00:00');
+      const dayOfWeek = date.getDay();
+      setCastleInfo(CASTLE_SCHEDULE[dayOfWeek]);
+
+      // Fetch all members
+      const res = await fetch("/api/members");
+      if (!res.ok) throw new Error("Failed to fetch members");
+      const json = await res.json();
+      const memberData = Array.isArray(json) ? json : json.members ?? [];
+
+      // Fetch existing entry data
+      const { data: existingEntries, error: entriesError } = await supabase
+        .from('castle_rush_entry')
+        .select('member_id, score, attendance')
+        .eq('castle_rush_id', entryId);
+
+      if (entriesError) throw entriesError;
+
+      // Map existing scores to entries state
+      const entriesMap: Record<string, string> = {};
+      existingEntries?.forEach((entry: any) => {
+        if (entry.score > 0) {
+          entriesMap[entry.member_id] = entry.score.toString();
+        }
+      });
+      setEntries(entriesMap);
+
+      // Sort members
+      const sortedMembers = memberData.sort((a: Member, b: Member) => {
+        const roleA = (a.role ?? "Member").toLowerCase();
+        const roleB = (b.role ?? "Member").toLowerCase();
+        const nameA = (a.name ?? "").toLowerCase();
+        const nameB = (b.name ?? "").toLowerCase();
+        
+        const isAMember = roleA === "member";
+        const isBMember = roleB === "member";
+        
+        if (isAMember && !isBMember) return 1;
+        if (!isAMember && isBMember) return -1;
+        
+        if (roleA !== roleB) {
+          return roleA.localeCompare(roleB);
+        }
+        
+        return nameA.localeCompare(nameB);
+      });
+      
+      setMembers(sortedMembers);
+    } catch (err) {
+      console.error("Error loading existing entry:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
-      loadMembers();
+      if (editEntryId) {
+        loadExistingEntry(editEntryId);
+      } else {
+        // Reset state when opening for a new entry
+        setExistingEntryId(null);
+        setSelectedDate("");
+        setEntries({});
+        setCastleInfo(null);
+        setSearchQuery("");
+        loadMembers();
+      }
     }
-  }, [isOpen, selectedDate]);
+  }, [isOpen, editEntryId, loadExistingEntry]);
 
   useEffect(() => {
     if (selectedDate) {
       const date = new Date(selectedDate + 'T00:00:00');
       const dayOfWeek = date.getDay();
       setCastleInfo(CASTLE_SCHEDULE[dayOfWeek]);
+      
+      // Check if entry exists for this date (only when adding new, not editing)
+      if (!editEntryId && !existingEntryId) {
+        checkExistingEntry(selectedDate);
+      }
     } else {
       setCastleInfo(null);
     }
-  }, [selectedDate]);
+  }, [selectedDate, editEntryId, existingEntryId]);
+
+  const checkExistingEntry = async (date: string) => {
+    try {
+      const { data: existingEntry, error } = await supabase
+        .from('castle_rush')
+        .select('id')
+        .eq('date', date)
+        .single();
+
+      if (!error && existingEntry) {
+        const shouldUpdate = confirm(
+          `An entry already exists for ${new Date(date + 'T00:00:00').toLocaleDateString()}. Would you like to update it instead?`
+        );
+        
+        if (shouldUpdate) {
+          // Load the existing entry for editing
+          loadExistingEntry(existingEntry.id);
+        } else {
+          // Clear the date to prevent duplicate creation
+          setSelectedDate("");
+        }
+      }
+    } catch (err) {
+      // No existing entry found, this is fine for new entries
+      console.log("No existing entry found for date:", date);
+    }
+  };
 
   async function loadMembers() {
     setLoading(true);
@@ -188,23 +295,32 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
     }));
   };
 
-  const handleToggleExclude = (memberId: string) => {
-    setExcludedMembers((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(memberId)) {
-        newSet.delete(memberId);
-        // Clear the score when re-adding
-      } else {
-        newSet.add(memberId);
-        // Clear the score when excluding
-        setEntries((prevEntries) => {
-          const newEntries = { ...prevEntries };
-          delete newEntries[memberId];
-          return newEntries;
-        });
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (displayedMembers.length === 1) {
+        const member = displayedMembers[0];
+        const numberMatch = searchQuery.match(/\s+(\d+)$/);
+        if (numberMatch) {
+          const score = numberMatch[1];
+          handleScoreChange(member.id, score);
+          setSearchQuery("");
+        }
       }
-      return newSet;
-    });
+    }
+  };
+
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Enter') {
+      // Allow Enter to submit only if search bar is empty
+      if (searchQuery.trim()) {
+        e.preventDefault();
+      }
+      // If search is empty and target is not a button, also prevent
+      else if ((e.target as HTMLElement).tagName !== 'BUTTON') {
+        e.preventDefault();
+      }
+    }
   };
 
   const handleMemberAdded = useCallback((newMember: Member) => {
@@ -212,14 +328,24 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
   }, []);
 
   // Filter members based on showAllMembers toggle - memoized
-  const displayedMembers = useMemo(() => 
-    showAllMembers ? members : members.filter((m) => m.kicked !== true),
-    [showAllMembers, members]
-  );
+  const displayedMembers = useMemo(() => {
+    let filtered = showAllMembers ? members : members.filter((m) => m.kicked !== true);
+    
+    // Apply search filter
+    if (searchQuery.trim()) {
+      // Remove trailing numbers (but keep spaces) from search query for filtering
+      const queryWithoutNumbers = searchQuery.replace(/\s+\d+$/, '').toLowerCase().trim();
+      filtered = filtered.filter((m) => 
+        m.name.toLowerCase().includes(queryWithoutNumbers)
+      );
+    }
+    
+    return filtered;
+  }, [showAllMembers, members, searchQuery]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!selectedDate) {
@@ -232,36 +358,112 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
       return;
     }
 
-    // Create castle_rush entry
-    const castleRushData = {
-      castle: castleInfo.castle,
-      date: selectedDate,
-      // logger_id will be added on the backend
-    };
+    // Prevent submitting if all scores are empty/0
+    const hasAnyScore = Object.values(entries).some(score => score && parseInt(score) > 0);
+    if (!hasAnyScore) {
+      alert("Please enter at least one score before submitting");
+      return;
+    }
 
-    // Create castle_rush_entry records for non-excluded members only
-    const entriesData = displayedMembers
-      .filter((member) => !excludedMembers.has(member.id))
-      .map((member) => {
-        const score = entries[member.id] ? parseInt(entries[member.id]) : null;
+    setSubmitting(true);
+
+    try {
+      // Final check: ensure no duplicate entry exists for this date (when creating new)
+      if (!editEntryId && !existingEntryId) {
+        const { data: duplicateCheck } = await supabase
+          .from('castle_rush')
+          .select('id')
+          .eq('date', selectedDate)
+          .single();
+
+        if (duplicateCheck) {
+          alert("An entry already exists for this date. Please refresh the page and try editing the existing entry instead.");
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // Create entries data for ALL members (not just displayed ones)
+      const entriesData = members.map((member) => {
+        const score = entries[member.id] ? parseInt(entries[member.id]) : 0;
+        
         return {
           member_id: member.id,
-          attendance: score !== null && score > 0, // true if they have a score
+          attendance: score > 0,
           score: score,
-          // castle_rush_id and logger_id will be added on the backend
         };
       });
 
-    console.log("Submitting castle rush:", castleRushData);
-    console.log("Submitting entries:", entriesData);
-    // Add your submission logic here
-    
-    // Reset form
-    setEntries({});
-    setSelectedDate("");
-    setCastleInfo(null);
-    setExcludedMembers(new Set());
-    onClose();
+      if (editEntryId || existingEntryId) {
+        // Update existing entry
+        const entryToUpdate = editEntryId || existingEntryId;
+        const { error: deleteError } = await supabase
+          .from('castle_rush_entry')
+          .delete()
+          .eq('castle_rush_id', entryToUpdate);
+
+        if (deleteError) throw deleteError;
+
+        // Get the castle rush to get its logger_id
+        const { data: castleRush } = await supabase
+          .from('castle_rush')
+          .select('logger_id')
+          .eq('id', entryToUpdate)
+          .single();
+
+        // Insert updated entries
+        const entryRecords = entriesData.map((entry: any) => ({
+          member_id: entry.member_id,
+          castle_rush_id: entryToUpdate,
+          attendance: entry.attendance,
+          score: entry.score,
+          logger_id: castleRush?.logger_id,
+        }));
+
+        const { error: insertError } = await supabase
+          .from('castle_rush_entry')
+          .insert(entryRecords);
+
+        if (insertError) throw insertError;
+
+        alert("Castle rush entries updated successfully!");
+      } else {
+        // Submit to API for new entry
+        const response = await fetch('/api/castle-rush', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            castle: castleInfo.castle,
+            date: selectedDate,
+            entries: entriesData,
+            loggedBy: 'system', // You can change this to the actual user name
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to submit castle rush');
+        }
+
+        const result = await response.json();
+        console.log("Castle rush submitted successfully:", result);
+        
+        alert("Castle rush entries saved successfully!");
+      }
+      
+      // Reset form
+      setEntries({});
+      setSelectedDate("");
+      setCastleInfo(null);
+      setSearchQuery("");
+      setExistingEntryId(null);
+      onClose();
+    } catch (error) {
+      console.error('Error submitting castle rush:', error);
+      alert(`Failed to save castle rush entries: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -277,6 +479,7 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
       />
       <form
         onSubmit={handleSubmit}
+        onKeyDown={handleFormKeyDown}
         className="relative z-10 w-full max-w-4xl p-6 rounded-lg max-h-[90vh] overflow-hidden flex flex-col"
         style={{
           background: "var(--color-surface)",
@@ -285,7 +488,9 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
         }}
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium">Add Castle Rush Entries</h3>
+          <h3 className="text-lg font-medium">
+            {editEntryId || existingEntryId ? "Edit Castle Rush Entry" : "Add Castle Rush Entries"}
+          </h3>
           <button
             type="button"
             onClick={onClose}
@@ -306,12 +511,15 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full px-3 py-2 rounded border"
+              className="w-full px-3 py-2 rounded border date-input"
               required
+              disabled={!!editEntryId || !!existingEntryId}
               style={{
                 background: "rgba(128, 128, 128, 0.1)",
                 borderColor: "var(--color-border)",
                 color: "var(--color-foreground)",
+                opacity: (editEntryId || existingEntryId) ? 0.6 : 1,
+                colorScheme: "dark",
               }}
             />
           </div>
@@ -339,14 +547,6 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
                     <div className="font-medium">{castleInfo.castle}</div>
                   </div>
                 </div>
-                <div>
-                  <div className="text-xs mb-1" style={{ color: "var(--color-muted)" }}>Recommendation</div>
-                  <div className="text-sm">
-                    {castleInfo.recommendation.map((rec, idx) => (
-                      <div key={idx}>{rec}</div>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -354,8 +554,8 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm">Members & Scores</label>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-xs" style={{ color: "var(--color-muted)" }}>
+              <div className="flex items-center gap-2 pr-4">
+                <label className="flex items-center gap-2 text-xs pr-4" style={{ color: "var(--color-muted)" }}>
                   <input
                     type="checkbox"
                     checked={showAllMembers}
@@ -378,6 +578,44 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
                 </button>
               </div>
             </div>
+            
+            {/* Search Bar */}
+            <div className="mb-3">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Quick entry: type member name, add space + score, press Enter"
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{
+                  background: "rgba(128, 128, 128, 0.1)",
+                  borderColor: displayedMembers.length === 1 && searchQuery.match(/\s+\d+$/) ? "#22C55E" : "var(--color-border)",
+                  color: displayedMembers.length === 1 && searchQuery.match(/\s+\d+$/) ? "#22C55E" : "var(--color-foreground)",
+                }}
+              />
+              {displayedMembers.length === 1 && searchQuery && (
+                searchQuery.match(/\s+\d+$/) ? (
+                  <div className="text-xs mt-1 px-1" style={{ color: "#22C55E", fontWeight: "600" }}>
+                    ✓ Ready! Press Enter to set score {parseInt(searchQuery.match(/\s+(\d+)$/)?.[1] || '0').toLocaleString()} for {displayedMembers[0].name}
+                  </div>
+                ) : searchQuery.includes(' ') ? (
+                  <div className="text-xs mt-1 px-1" style={{ color: "#FBBF24", fontWeight: "500" }}>
+                    Preparing for {displayedMembers[0].name}... (add score)
+                  </div>
+                ) : (
+                  <div className="text-xs mt-1 px-1" style={{ color: "#A78BFA", fontWeight: "500" }}>
+                    Preparing for {displayedMembers[0].name}... (add space + score)
+                  </div>
+                )
+              )}
+              {displayedMembers.length === 0 && searchQuery && !searchQuery.match(/\s+\d+$/) && (
+                <div className="text-xs mt-1 px-1" style={{ color: "var(--color-muted)" }}>
+                  No members found matching "{searchQuery.replace(/\s+\d+$/, '')}"
+                </div>
+              )}
+            </div>
+
             {loading ? (
               <div className="text-sm" style={{ color: "var(--color-muted)" }}>
                 Loading members...
@@ -403,25 +641,31 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
                         >
                           <th className="text-left px-4 py-2 text-sm font-medium">Member Name</th>
                           <th className="text-right px-4 py-2 text-sm font-medium" style={{ width: "120px" }}>Score</th>
-                          <th className="text-center px-2 py-2 text-sm font-medium" style={{ width: "80px" }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {displayedMembers.slice(0, Math.ceil(displayedMembers.length / 2)).map((member) => {
-                          const isExcluded = excludedMembers.has(member.id);
                           return (
                             <tr 
                               key={member.id}
                               className="border-b"
                               style={{ 
                                 borderColor: "var(--color-border)",
-                                opacity: isExcluded ? 0.4 : (member.kicked ? 0.6 : 1)
+                                opacity: member.kicked ? 0.6 : 1
                               }}
                             >
                               <td className="px-4 py-2 text-sm">
-                                {member.name}
-                                {member.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
-                                {isExcluded && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(excluded)</span>}
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    {member.name}
+                                    {member.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
+                                  </div>
+                                  {entries[member.id] && parseInt(entries[member.id]) > 0 && (
+                                    <span className="text-xs" style={{ color: "var(--color-muted)" }}>
+                                      {parseInt(entries[member.id]).toLocaleString()}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-4 py-2" style={{ width: "120px" }}>
                                 <input
@@ -431,26 +675,12 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
                                   className="w-full px-2 py-1 rounded border text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                   placeholder="0"
                                   min="0"
-                                  disabled={isExcluded}
                                   style={{
                                     background: "transparent",
                                     borderColor: "var(--color-border)",
                                     color: "var(--color-foreground)",
                                   }}
-                                />
-                              </td>
-                              <td className="px-2 py-2 text-center" style={{ width: "80px" }}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleExclude(member.id)}
-                                  className="px-2 py-1 text-xs rounded"
-                                  style={{
-                                    backgroundColor: isExcluded ? "var(--color-primary)" : "rgba(128, 128, 128, 0.6)",
-                                    color: "white",
-                                  }}
-                                >
-                                  {isExcluded ? "Add" : "Remove"}
-                                </button>
+                                />  
                               </td>
                             </tr>
                           );
@@ -472,25 +702,31 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
                         >
                           <th className="text-left px-4 py-2 text-sm font-medium">Member Name</th>
                           <th className="text-right px-4 py-2 text-sm font-medium" style={{ width: "120px" }}>Score</th>
-                          <th className="text-center px-2 py-2 text-sm font-medium" style={{ width: "80px" }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {displayedMembers.slice(Math.ceil(displayedMembers.length / 2)).map((member) => {
-                          const isExcluded = excludedMembers.has(member.id);
                           return (
                             <tr 
                               key={member.id}
                               className="border-b"
                               style={{ 
                                 borderColor: "var(--color-border)",
-                                opacity: isExcluded ? 0.4 : (member.kicked ? 0.6 : 1)
+                                opacity: member.kicked ? 0.6 : 1
                               }}
                             >
                               <td className="px-4 py-2 text-sm">
-                                {member.name}
-                                {member.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
-                                {isExcluded && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(excluded)</span>}
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    {member.name}
+                                    {member.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
+                                  </div>
+                                  {entries[member.id] && parseInt(entries[member.id]) > 0 && (
+                                    <span className="text-xs" style={{ color: "var(--color-muted)" }}>
+                                      {parseInt(entries[member.id]).toLocaleString()}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-4 py-2" style={{ width: "120px" }}>
                                 <input
@@ -500,26 +736,12 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
                                   className="w-full px-2 py-1 rounded border text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                   placeholder="0"
                                   min="0"
-                                  disabled={isExcluded}
                                   style={{
                                     background: "transparent",
                                     borderColor: "var(--color-border)",
                                     color: "var(--color-foreground)",
                                   }}
-                                />
-                              </td>
-                              <td className="px-2 py-2 text-center" style={{ width: "80px" }}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleExclude(member.id)}
-                                  className="px-2 py-1 text-xs rounded"
-                                  style={{
-                                    backgroundColor: isExcluded ? "var(--color-primary)" : "rgba(128, 128, 128, 0.6)",
-                                    color: "white",
-                                  }}
-                                >
-                                  {isExcluded ? "Add" : "Remove"}
-                                </button>
+                                />  
                               </td>
                             </tr>
                           );
@@ -548,12 +770,14 @@ export default function CastleRushEntryModal({ isOpen, onClose, days }: CastleRu
           <button
             type="submit"
             className="px-4 py-2 rounded"
+            disabled={submitting}
             style={{
               backgroundColor: "var(--color-primary)",
               color: "white",
+              opacity: submitting ? 0.6 : 1,
             }}
           >
-            Save
+            {submitting ? "Saving..." : ((editEntryId || existingEntryId) ? "Update" : "Save")}
           </button>
         </div>
       </form>

@@ -90,6 +90,18 @@
   input::placeholder { color: var(--color-muted); }
 }
 
+/* Remove spinner buttons from number inputs */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* Basic page styles using tokens */
 html, body, #__next {
   height: 100%;
@@ -200,5 +212,23 @@ select option {
   select option {
     background-color: rgba(30, 30, 30, 1);
     color: var(--color-foreground);
+  }
+}
+
+/* Date picker calendar styling */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.5) sepia(1) saturate(3) hue-rotate(250deg);
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.8) sepia(1) saturate(2) hue-rotate(250deg);
   }
 }

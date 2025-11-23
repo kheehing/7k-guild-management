@@ -4,7 +4,11 @@ import "./globals.css"; // Tailwind
 export const metadata = {
   title: "Ap0theosis",
   description: "Guild management",
-  robots: { index: false, follow: false },
+  robots: { index: false, follow: false, nocache: true, noarchive: true },
+  openGraph: {
+    title: "Ap0theosis",
+    description: "Guild management",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
