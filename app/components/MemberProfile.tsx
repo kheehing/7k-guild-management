@@ -108,7 +108,6 @@ export default function MemberProfile({ member, onBack, onUpdate }: MemberProfil
 
       setDayScores(scores);
     } catch (error) {
-      console.error('Error loading member scores:', error);
     } finally {
       setLoadingScores(false);
       setInitialLoad(false);
@@ -129,7 +128,6 @@ export default function MemberProfile({ member, onBack, onUpdate }: MemberProfil
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error('API error:', errorData);
         throw new Error(errorData.error || 'Failed to update member');
       }
 
@@ -137,7 +135,6 @@ export default function MemberProfile({ member, onBack, onUpdate }: MemberProfil
       onUpdate?.(updatedMember);
       setIsEditing(false);
     } catch (error) {
-      console.error('Error updating member:', error);
       alert(`Failed to update member: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setSaving(false);
@@ -160,7 +157,6 @@ export default function MemberProfile({ member, onBack, onUpdate }: MemberProfil
       const updatedMember = { ...member, kicked: !member.kicked };
       onUpdate?.(updatedMember);
     } catch (error) {
-      console.error('Error updating member status:', error);
       alert('Failed to update member status');
     } finally {
       setSaving(false);
@@ -183,7 +179,6 @@ export default function MemberProfile({ member, onBack, onUpdate }: MemberProfil
       alert('Member deleted successfully');
       onBack();
     } catch (error) {
-      console.error('Error deleting member:', error);
       alert('Failed to delete member');
     } finally {
       setSaving(false);

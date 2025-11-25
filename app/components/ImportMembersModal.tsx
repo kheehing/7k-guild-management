@@ -82,7 +82,6 @@ export default function ImportMembersModal({ isOpen, onClose, onMembersImported 
       onMembersImported();
       onClose();
     } catch (error) {
-      console.error('Error importing members:', error);
       alert(`Failed to import members: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setImporting(false);

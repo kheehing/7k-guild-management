@@ -23,16 +23,11 @@ export async function GET() {
       .limit(1000);
 
     if (error) {
-      console.error("Supabase error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    console.log("API returning members:", data);
-    console.log("Total count from DB:", count);
-    console.log("Data length:", data?.length ?? 0);
     return NextResponse.json({ members: data ?? [] });
   } catch (err: any) {
-    console.error("API error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
@@ -79,18 +74,13 @@ export async function POST(req: Request) {
       loggerPayload.logged_by = userIdentifier;
     }
 
-    console.log("Creating new logger with payload:", loggerPayload);
-
     const { data: newLogger, error: loggerErr } = await supabaseAdmin
       .from("logger")
       .insert([loggerPayload])
       .select("id")
       .single();
 
-    console.log("Logger creation result:", { newLogger, loggerErr });
-
     if (loggerErr) {
-      console.error("Failed to create logger:", loggerErr);
       return NextResponse.json(
         { error: `Failed to create logger: ${loggerErr.message}` },
         { status: 500 }
@@ -98,10 +88,9 @@ export async function POST(req: Request) {
     }
 
     logger_id = newLogger?.id;
-    console.log("Assigned logger_id:", logger_id);
 
     // Build insert payload
-    let insertPayload: any = { name, role: normalizedRole };
+    const insertPayload: any = { name, role: normalizedRole };
     if (logger_id) {
       insertPayload.logger_id = logger_id;
     }

@@ -55,12 +55,10 @@ export default function Page() {
       let res;
       res = await supabase.auth.signInWithPassword({ email: emailToUse, password });
       if ((res as any).error) {
-        console.error("Supabase auth error:", res);
         throw (res as any).error;
       }
       // on success, the onAuthStateChange handler will redirect
     } catch (err: any) {
-      console.error("Auth failed:", err);
       setError(err.message || String(err));
     } finally {
       setLoading(false);

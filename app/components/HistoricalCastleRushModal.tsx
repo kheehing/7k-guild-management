@@ -88,7 +88,6 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
       if (error) throw error;
       setAllMembers(data || []);
     } catch (err) {
-      console.error("Error loading members:", err);
     } finally {
       setLoading(false);
     }
@@ -256,7 +255,6 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
       setCastleInfo(null);
       onClose();
     } catch (error) {
-      console.error('Error creating historical entry:', error);
       alert(`Failed to create entry: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setSubmitting(false);

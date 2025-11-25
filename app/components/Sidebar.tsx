@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback, memo } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { FaSignOutAlt, FaSearch, FaPlus } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabaseClient";
@@ -38,16 +38,18 @@ export default function Sidebar({ children }: SidebarProps) {
     async function loadMembers() {
       setLoading(true);
       try {
-        const res = await fetch("/api/members");
-        if (!res.ok) throw new Error("Failed to fetch members");
-        const json = await res.json();
+        // Fetch directly from Supabase with only needed fields
+        const { data, error } = await supabase
+          .from('members')
+          .select('id, name, role, kicked, created_at')
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
         if (!cancelled) {
-          const memberData = Array.isArray(json) ? json : json.members ?? [];
-          console.log("Loaded members:", memberData);
-          setMembers(memberData);
+          setMembers(data || []);
         }
       } catch (err) {
-        console.error("Error loading members:", err);
+        // Error loading members
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -97,10 +99,8 @@ export default function Sidebar({ children }: SidebarProps) {
   }, [members, search]);
 
   const openProfile = useCallback((m: Member) => {
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("openProfile", { detail: m }));
-    }
-  }, []);
+    router.push(`/dashboard/members/${m.id}`);
+  }, [router]);
 
   const handleMemberAdded = useCallback((member: Member) => {
     setMembers((s) => [member, ...s]);
@@ -124,7 +124,6 @@ export default function Sidebar({ children }: SidebarProps) {
       // Update local state to reflect the kick
       setMembers((s) => s.map((m) => m.id === memberId ? { ...m, kicked: true } : m));
     } catch (err: any) {
-      console.error("Error kicking member:", err);
       alert(err?.message ?? "Failed to kick member");
     }
   }, []);
@@ -134,12 +133,12 @@ export default function Sidebar({ children }: SidebarProps) {
       setSigningOut(true);
       const { error } = await supabase.auth.signOut();
       if (error) {
-        console.error("Sign out error:", error);
+        // Sign out error
       }
       // redirect to login/root after sign out
       router.push("/");
     } catch (err) {
-      console.error("Sign out failed:", err);
+      // Sign out failed
     } finally {
       setSigningOut(false);
     }

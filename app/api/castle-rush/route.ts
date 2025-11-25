@@ -21,7 +21,6 @@ export async function POST(req: Request) {
       .single();
 
     if (loggerError) {
-      console.error("Error creating logger:", loggerError);
       return NextResponse.json(
         { error: "Failed to create logger entry" },
         { status: 500 }
@@ -42,7 +41,6 @@ export async function POST(req: Request) {
       .single();
 
     if (castleRushError) {
-      console.error("Error creating castle rush:", castleRushError);
       return NextResponse.json(
         { error: "Failed to create castle rush entry" },
         { status: 500 }
@@ -65,7 +63,6 @@ export async function POST(req: Request) {
       .insert(entryRecords);
 
     if (entriesError) {
-      console.error("Error creating castle rush entries:", entriesError);
       return NextResponse.json(
         { error: "Failed to create castle rush entries" },
         { status: 500 }
@@ -78,7 +75,6 @@ export async function POST(req: Request) {
       loggerId,
     });
   } catch (err: any) {
-    console.error("API error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

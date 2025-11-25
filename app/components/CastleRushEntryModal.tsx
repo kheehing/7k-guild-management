@@ -137,7 +137,6 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
       
       setMembers(sortedMembers);
     } catch (err) {
-      console.error("Error loading existing entry:", err);
     } finally {
       setLoading(false);
     }
@@ -197,7 +196,6 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
       }
     } catch (err) {
       // No existing entry found, this is fine for new entries
-      console.log("No existing entry found for date:", date);
     }
   };
 
@@ -246,7 +244,7 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
               }
             }
           } catch (err) {
-            console.error("Error fetching performance data:", err);
+            // Error fetching performance data
           }
         }
       }
@@ -282,7 +280,7 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
       
       setMembers(sortedMembers);
     } catch (err) {
-      console.error("Error loading members:", err);
+      // Error loading members
     } finally {
       setLoading(false);
     }
@@ -445,8 +443,7 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
           throw new Error(errorData.error || 'Failed to submit castle rush');
         }
 
-        const result = await response.json();
-        console.log("Castle rush submitted successfully:", result);
+        await response.json();
         
         alert("Castle rush entries saved successfully!");
       }
@@ -459,7 +456,6 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
       setExistingEntryId(null);
       onClose();
     } catch (error) {
-      console.error('Error submitting castle rush:', error);
       alert(`Failed to save castle rush entries: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setSubmitting(false);

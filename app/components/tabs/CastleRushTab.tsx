@@ -76,7 +76,6 @@ export default function CastleRushTab() {
       alert("Castle Rush entry deleted successfully!");
       loadCastleRushData(); // Reload the data
     } catch (error) {
-      console.error("Error deleting entry:", error);
       alert(`Failed to delete entry: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
@@ -88,7 +87,7 @@ export default function CastleRushTab() {
   async function loadCastleRushData() {
     setLoading(true);
     try {
-      // Get castle rush entries for current month
+      // Get castle rush entries for current month only
       const firstDayStr = new Date(year, month, 1).toISOString().split('T')[0];
       const lastDayStr = new Date(year, month + 1, 0).toISOString().split('T')[0];
       
@@ -133,7 +132,6 @@ export default function CastleRushTab() {
 
       setCastleRushData(processedData);
     } catch (err) {
-      console.error("Error loading castle rush data:", err);
     } finally {
       setLoading(false);
     }

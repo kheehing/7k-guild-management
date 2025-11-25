@@ -10,7 +10,7 @@ const OverviewTab = lazy(() => import("../components/tabs/OverviewTab"));
 const MembersTab = lazy(() => import("../components/tabs/MembersTab"));
 const AnalysisTab = lazy(() => import("../components/tabs/AnalysisTab"));
 const CastleRushTab = lazy(() => import("../components/tabs/CastleRushTab"));
-const SettingsTab = lazy(() => import("../components/tabs/SettingsTab"));
+const ExportTab = lazy(() => import("../components/tabs/ExportTab"));
 const AdventTab = lazy(() => import("../components/tabs/AdventTab"));
 
 interface Member {
@@ -50,7 +50,7 @@ export default function Page() {
     { id: "analysis", label: "Analysis" },
     { id: "CastleRush", label: "CastleRush" },
     { id: "advent", label: "Advent" },
-    { id: "settings", label: "Settings" },
+    { id: "export", label: "Export" },
   ];
 
   return (
@@ -81,7 +81,7 @@ export default function Page() {
                 {activeTab === "analysis" && <AnalysisTab />}
                 {activeTab === "CastleRush" && <CastleRushTab />}
                 {activeTab === "advent" && <AdventTab />}
-                {activeTab === "settings" && <SettingsTab />}
+                {activeTab === "export" && <ExportTab />}
               </Suspense>
             </div>
           </>
