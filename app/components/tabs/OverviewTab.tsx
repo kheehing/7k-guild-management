@@ -82,9 +82,45 @@ export default function OverviewTab() {
 
       const members: Member[] = membersRes.data || [];
       const crEntries = crEntriesRes.data || [];
-      const aeEntries = aeEntriesRes.data || [];
+      const aeRawEntries = aeEntriesRes.data || [];
       const crEvents = crEventsRes.data || [];
       const aeEvents = aeEventsRes.data || [];
+
+      // Process Advent entries: Group by member and date (1 entry per date if participated in any boss)
+      const aeByDateAndMember = new Map<string, boolean>();
+      aeRawEntries.forEach((e: any) => {
+        const key = `${e.member_id}_${e.date}`;
+        if (e.attendance) {
+          aeByDateAndMember.set(key, true);
+        } else if (!aeByDateAndMember.has(key)) {
+          aeByDateAndMember.set(key, false);
+        }
+      });
+
+      const uniqueAdventDates = new Set(aeRawEntries.map((e: any) => e.date));
+      const adventMembers = new Set(aeRawEntries.map((e: any) => e.member_id));
+
+      const aeEntries: any[] = [];
+      adventMembers.forEach(member_id => {
+        uniqueAdventDates.forEach(date => {
+          const key = `${member_id}_${date}`;
+          const attended = aeByDateAndMember.get(key) || false;
+          
+          // Calculate total score for this member on this date
+          const memberDateEntries = aeRawEntries.filter((e: any) => 
+            e.member_id === member_id && e.date === date
+          );
+          const totalScore = memberDateEntries.reduce((sum: number, e: any) => sum + (e.total_score || 0), 0);
+          
+          aeEntries.push({
+            member_id,
+            attendance: attended,
+            total_score: totalScore,
+            date,
+            advent_expedition: memberDateEntries[0]?.advent_expedition
+          });
+        });
+      });
 
       // Member statistics
       const totalMembers = members.length;

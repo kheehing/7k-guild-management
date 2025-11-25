@@ -31,6 +31,7 @@ interface MemberStats {
   highestScore: number;
   lowestScore: number;
   consistency: number; // score variance
+  riskScore: number;
 }
 
 interface GuildMetrics {
@@ -81,13 +82,43 @@ export default function AnalysisTab() {
         type: 'castle_rush'
       }));
 
-      const aeEntries = (aeRes.data || []).map((e: any) => ({
-        member_id: e.member_id,
-        attendance: e.attendance,
-        score: e.total_score,
-        date: e.date,
-        type: 'advent'
-      }));
+      // Group Advent Expedition entries by date (each date = 1 event with multiple bosses)
+      // If member participated in at least 1 boss on that date, count as attended
+      const aeByDateAndMember = new Map<string, boolean>();
+      (aeRes.data || []).forEach((e: any) => {
+        const key = `${e.member_id}_${e.date}`;
+        if (e.attendance) {
+          aeByDateAndMember.set(key, true);
+        } else if (!aeByDateAndMember.has(key)) {
+          aeByDateAndMember.set(key, false);
+        }
+      });
+
+      // Get unique Advent dates and members for creating entries
+      const uniqueAdventDates = new Set((aeRes.data || []).map((e: any) => e.date));
+      const adventMembers = new Set((aeRes.data || []).map((e: any) => e.member_id));
+
+      const aeEntries: any[] = [];
+      adventMembers.forEach(member_id => {
+        uniqueAdventDates.forEach(date => {
+          const key = `${member_id}_${date}`;
+          const attended = aeByDateAndMember.get(key) || false;
+          
+          // Calculate total score for this member on this date
+          const memberDateEntries = (aeRes.data || []).filter((e: any) => 
+            e.member_id === member_id && e.date === date
+          );
+          const totalScore = memberDateEntries.reduce((sum: number, e: any) => sum + (e.total_score || 0), 0);
+          
+          aeEntries.push({
+            member_id,
+            attendance: attended,
+            score: totalScore,
+            date,
+            type: 'advent'
+          });
+        });
+      });
 
       const allEntries = [...crEntries, ...aeEntries];
 
@@ -148,8 +179,17 @@ export default function AnalysisTab() {
           const crAttendedCount = crMemberEntries.filter((e: any) => e.attendance).length;
           const crAttendanceRate = crMemberEntries.length > 0 ? (crAttendedCount / crMemberEntries.length) * 100 : 0;
           
-          const aeAttendedCount = aeMemberEntries.filter((e: any) => e.attendance).length;
-          const aeAttendanceRate = aeMemberEntries.length > 0 ? (aeAttendedCount / aeMemberEntries.length) * 100 : 0;
+          // Advent: Count unique dates where member participated
+          const aeMemberDates = new Set(aeMemberEntries.map((e: any) => e.date));
+          const aeAttendedDates = new Set(
+            aeMemberEntries.filter((e: any) => e.attendance).map((e: any) => e.date)
+          );
+          const aeAttendanceRate = aeMemberDates.size > 0 ? (aeAttendedDates.size / aeMemberDates.size) * 100 : 0;
+
+          // Calculate risk score: (100 - attendanceRate) * (1 + totalEntries/10)
+          const riskScore = memberEntries.length >= 3 
+            ? (100 - attendanceRate) * (1 + memberEntries.length / 10)
+            : 0;
 
           // Last entry date
           const lastEntry = sorted.length > 0 ? sorted[0].date : null;
@@ -184,12 +224,13 @@ export default function AnalysisTab() {
             daysSinceLastEntry,
             weeklyActivity,
             castleRushEntries: crMemberEntries.length,
-            adventEntries: aeMemberEntries.length,
+            adventEntries: aeMemberDates.size,
             castleRushAttendance: crAttendanceRate,
             adventAttendance: aeAttendanceRate,
             highestScore,
             lowestScore,
             consistency,
+            riskScore,
           };
         });
 
@@ -227,10 +268,18 @@ export default function AnalysisTab() {
       .sort((a, b) => b.averageScore - a.averageScore)
       .slice(0, 5);
 
-    // At-risk members: Low attendance (<60%) OR inactive for 3+ days
+    // At-risk members: Calculate risk score based on attendance rate AND total entries
+    // Formula: riskScore = (100 - attendanceRate) * (1 + totalEntries/10)
+    // This makes members with more entries and low attendance worse
+    // Exclude members with less than 3 total entries (too new to judge)
     const atRiskMembers = stats
-      .filter(s => s.attendanceRate < 60 || (s.daysSinceLastEntry !== null && s.daysSinceLastEntry >= 3))
-      .sort((a, b) => a.attendanceRate - b.attendanceRate)
+      .filter(s => s.totalEntries >= 3) // Must have at least 3 entries
+      .map(s => ({
+        ...s,
+        riskScore: (100 - s.attendanceRate) * (1 + s.totalEntries / 10)
+      }))
+      .filter(s => s.attendanceRate < 70 || (s.daysSinceLastEntry !== null && s.daysSinceLastEntry >= 3))
+      .sort((a, b) => b.riskScore - a.riskScore)
       .slice(0, 5);
 
     // Recently inactive: Haven't participated in 2+ days but were previously active
@@ -278,7 +327,7 @@ export default function AnalysisTab() {
       return sorted.filter(s => s.attendanceRate >= 80 && s.averageScore > guildMetrics.guildAverageScore);
     }
     if (filterCategory === 'atrisk') {
-      return sorted.filter(s => s.attendanceRate < 60 || (s.daysSinceLastEntry !== null && s.daysSinceLastEntry >= 3));
+      return sorted.filter(s => s.totalEntries >= 3 && (s.attendanceRate < 70 || (s.daysSinceLastEntry !== null && s.daysSinceLastEntry >= 3)));
     }
     if (filterCategory === 'inactive') {
       return sorted.filter(s => s.daysSinceLastEntry !== null && s.daysSinceLastEntry >= 2);
@@ -526,7 +575,7 @@ export default function AnalysisTab() {
               </div>
               <div className="space-y-3">
                 {guildMetrics.atRiskMembers.length > 0 ? (
-                  guildMetrics.atRiskMembers.map((member) => (
+                  guildMetrics.atRiskMembers.map((member: any) => (
                     <div
                       key={member.memberId}
                       className="flex items-center justify-between p-3 rounded"
@@ -537,9 +586,8 @@ export default function AnalysisTab() {
                           {member.memberName}
                         </div>
                         <div className="text-xs" style={{ color: "var(--color-muted)" }}>
-                          {member.daysSinceLastEntry !== null && member.daysSinceLastEntry >= 3
-                            ? `Inactive ${member.daysSinceLastEntry}d`
-                            : `Low attendance: ${member.attendanceRate.toFixed(0)}%`}
+                          {member.totalEntries} entries • {member.attendanceRate.toFixed(0)}% attendance
+                          {member.daysSinceLastEntry !== null && member.daysSinceLastEntry >= 3 && ` • Inactive ${member.daysSinceLastEntry}d`}
                         </div>
                       </div>
                       <div className="text-right">
@@ -547,7 +595,7 @@ export default function AnalysisTab() {
                           className="text-sm font-bold px-2 py-1 rounded"
                           style={{ backgroundColor: "#ef4444", color: "white" }}
                         >
-                          {member.attendanceRate.toFixed(0)}%
+                          Risk: {member.riskScore.toFixed(0)}
                         </div>
                       </div>
                     </div>
@@ -769,7 +817,6 @@ export default function AnalysisTab() {
                 <thead>
                   <tr style={{ backgroundColor: "rgba(0,0,0,0.02)", borderBottom: "1px solid var(--color-border)" }}>
                     <th className="text-left p-4 font-semibold text-sm">Member</th>
-                    <th className="text-left p-4 font-semibold text-sm">Role</th>
                     <th className="text-center p-4 font-semibold text-sm">Events</th>
                     <th className="text-center p-4 font-semibold text-sm">Attendance</th>
                     <th className="text-center p-4 font-semibold text-sm">Avg Score (7d)</th>
@@ -777,6 +824,7 @@ export default function AnalysisTab() {
                     <th className="text-center p-4 font-semibold text-sm">Consistency</th>
                     <th className="text-center p-4 font-semibold text-sm">Last Active</th>
                     <th className="text-left p-4 font-semibold text-sm">Weekly Activity</th>
+                    <th className="text-center p-4 font-semibold text-sm">Risk</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -805,16 +853,9 @@ export default function AnalysisTab() {
                           </div>
                           <div>
                             <div className="font-medium">{s.memberName}</div>
+                            <div className="text-xs" style={{ color: "var(--color-muted)" }}>{s.role}</div>
                           </div>
                         </div>
-                      </td>
-                      <td className="p-4">
-                        <span
-                          className="px-2 py-1 rounded text-xs font-medium"
-                          style={{ backgroundColor: "rgba(0,0,0,0.03)", color: "var(--color-muted)" }}
-                        >
-                          {s.role}
-                        </span>
                       </td>
                       <td className="p-4 text-center">
                         <div className="font-medium">{s.totalEntries}</div>

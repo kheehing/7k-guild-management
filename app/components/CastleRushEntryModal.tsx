@@ -341,6 +341,26 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
     return filtered;
   }, [showAllMembers, members, searchQuery]);
 
+  // Members with scores, sorted by score (highest first)
+  const membersWithScores = useMemo(() => {
+    return Object.entries(entries)
+      .filter(([_, score]) => score && parseInt(score) > 0)
+      .map(([memberId, score]) => {
+        const member = members.find(m => m.id === memberId);
+        const scoreNum = parseInt(score) || 0;
+        return member ? { member, score: scoreNum } : null;
+      })
+      .filter((item): item is { member: Member; score: number } => item !== null)
+      .sort((a, b) => b.score - a.score);
+  }, [entries, members]);
+
+  // Calculate total score
+  const totalScore = useMemo(() => {
+    return Object.values(entries)
+      .filter(score => score && score.trim() !== '')
+      .reduce((sum, score) => sum + (parseInt(score) || 0), 0);
+  }, [entries]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -617,134 +637,149 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
                 Loading members...
               </div>
             ) : (
-              <div 
-                className="border rounded-lg overflow-hidden"
-                style={{ 
-                  borderColor: "var(--color-border)"
-                }}
-              >
-                <div className="grid grid-cols-2 gap-x-4">
-                  {/* Left Column */}
-                  <div>
-                    <table className="w-full">
-                      <thead className="sticky top-0">
-                        <tr 
-                          className="border-b"
-                          style={{ 
-                            borderColor: "var(--color-border)",
-                            backgroundColor: "var(--color-surface)"
-                          }}
-                        >
-                          <th className="text-left px-4 py-2 text-sm font-medium">Member Name</th>
-                          <th className="text-right px-4 py-2 text-sm font-medium" style={{ width: "120px" }}>Score</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayedMembers.slice(0, Math.ceil(displayedMembers.length / 2)).map((member) => {
-                          return (
-                            <tr 
-                              key={member.id}
-                              className="border-b"
-                              style={{ 
-                                borderColor: "var(--color-border)",
-                                opacity: member.kicked ? 0.6 : 1
-                              }}
-                            >
-                              <td className="px-4 py-2 text-sm">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    {member.name}
-                                    {member.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
-                                  </div>
-                                  {entries[member.id] && parseInt(entries[member.id]) > 0 && (
-                                    <span className="text-xs" style={{ color: "var(--color-muted)" }}>
-                                      {parseInt(entries[member.id]).toLocaleString()}
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-4 py-2" style={{ width: "120px" }}>
-                                <input
-                                  type="number"
-                                  value={entries[member.id] || ""}
-                                  onChange={(e) => handleScoreChange(member.id, e.target.value)}
-                                  className="w-full px-2 py-1 rounded border text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                  placeholder="0"
-                                  min="0"
-                                  style={{
-                                    background: "transparent",
-                                    borderColor: "var(--color-border)",
-                                    color: "var(--color-foreground)",
-                                  }}
-                                />  
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Left Side - Search Area (always visible) */}
+                <div className="space-y-3">
+                  <div className="text-sm font-medium" style={{ color: "var(--color-foreground)" }}>
+                    Add Scores
                   </div>
+                  {displayedMembers.length === 0 ? (
+                    <div className="text-sm p-4 rounded border" style={{ 
+                      color: "var(--color-muted)",
+                      borderColor: "var(--color-border)",
+                      backgroundColor: "rgba(128, 128, 128, 0.05)"
+                    }}>
+                      {searchQuery ? "No members found" : "No members available"}
+                    </div>
+                  ) : (
+                    <div 
+                      className="border rounded-lg overflow-auto"
+                      style={{ 
+                        borderColor: "var(--color-border)",
+                        maxHeight: "400px"
+                      }}
+                    >
+                      <table className="w-full">
+                        <thead className="sticky top-0">
+                          <tr 
+                            className="border-b"
+                            style={{ 
+                              borderColor: "var(--color-border)",
+                              backgroundColor: "var(--color-surface)"
+                            }}
+                          >
+                            <th className="text-left px-3 py-2 text-xs font-medium">Name</th>
+                            <th className="text-right px-3 py-2 text-xs font-medium" style={{ width: "100px" }}>Score</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {displayedMembers.map((member) => {
+                            const hasScore = entries[member.id] && parseInt(entries[member.id]) > 0;
+                            return (
+                              <tr 
+                                key={member.id}
+                                className="border-b"
+                                style={{ 
+                                  borderColor: "var(--color-border)",
+                                  opacity: member.kicked ? 0.6 : 1,
+                                  backgroundColor: hasScore ? "rgba(34, 197, 94, 0.05)" : "transparent"
+                                }}
+                              >
+                                <td className="px-3 py-2 text-sm">
+                                  {member.name}
+                                  {member.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
+                                </td>
+                                <td className="px-3 py-2" style={{ width: "100px" }}>
+                                  <input
+                                    type="number"
+                                    value={entries[member.id] || ""}
+                                    onChange={(e) => handleScoreChange(member.id, e.target.value)}
+                                    onWheel={(e) => e.currentTarget.blur()}
+                                    className="w-full px-2 py-1 rounded border text-right text-sm"
+                                    placeholder="0"
+                                    min="0"
+                                    style={{
+                                      background: "rgba(128, 128, 128, 0.1)",
+                                      borderColor: "var(--color-border)",
+                                      color: "var(--color-foreground)",
+                                    }}
+                                  />  
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
 
-                  {/* Right Column */}
-                  <div>
-                    <table className="w-full">
-                      <thead className="sticky top-0">
-                        <tr 
-                          className="border-b"
-                          style={{ 
-                            borderColor: "var(--color-border)",
-                            backgroundColor: "var(--color-surface)"
-                          }}
-                        >
-                          <th className="text-left px-4 py-2 text-sm font-medium">Member Name</th>
-                          <th className="text-right px-4 py-2 text-sm font-medium" style={{ width: "120px" }}>Score</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayedMembers.slice(Math.ceil(displayedMembers.length / 2)).map((member) => {
-                          return (
+                {/* Right Side - Members with Scores (sorted by score) */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium" style={{ color: "var(--color-foreground)" }}>
+                      Entered ({membersWithScores.length})
+                    </div>
+                    {totalScore > 0 && (
+                      <div className="text-sm font-mono font-semibold" style={{ color: "var(--color-primary)" }}>
+                        Total: {totalScore.toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                  {membersWithScores.length === 0 ? (
+                    <div className="text-sm p-4 rounded border" style={{ 
+                      color: "var(--color-muted)",
+                      borderColor: "var(--color-border)",
+                      backgroundColor: "rgba(128, 128, 128, 0.05)"
+                    }}>
+                      No scores entered yet. Use the search above to add member scores.
+                    </div>
+                  ) : (
+                    <div 
+                      className="border rounded-lg overflow-auto"
+                      style={{ 
+                        borderColor: "var(--color-border)",
+                        maxHeight: "400px"
+                      }}
+                    >
+                      <table className="w-full">
+                        <thead className="sticky top-0">
+                          <tr 
+                            className="border-b"
+                            style={{ 
+                              borderColor: "var(--color-border)",
+                              backgroundColor: "var(--color-surface)"
+                            }}
+                          >
+                            <th className="text-left px-3 py-2 text-xs font-medium">#</th>
+                            <th className="text-left px-3 py-2 text-xs font-medium">Name</th>
+                            <th className="text-right px-3 py-2 text-xs font-medium">Score</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {membersWithScores.map((item, index) => (
                             <tr 
-                              key={member.id}
+                              key={item.member.id}
                               className="border-b"
                               style={{ 
                                 borderColor: "var(--color-border)",
-                                opacity: member.kicked ? 0.6 : 1
                               }}
                             >
-                              <td className="px-4 py-2 text-sm">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    {member.name}
-                                    {member.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
-                                  </div>
-                                  {entries[member.id] && parseInt(entries[member.id]) > 0 && (
-                                    <span className="text-xs" style={{ color: "var(--color-muted)" }}>
-                                      {parseInt(entries[member.id]).toLocaleString()}
-                                    </span>
-                                  )}
-                                </div>
+                              <td className="px-3 py-2 text-sm" style={{ color: "var(--color-muted)", width: "40px" }}>
+                                {index + 1}
                               </td>
-                              <td className="px-4 py-2" style={{ width: "120px" }}>
-                                <input
-                                  type="number"
-                                  value={entries[member.id] || ""}
-                                  onChange={(e) => handleScoreChange(member.id, e.target.value)}
-                                  className="w-full px-2 py-1 rounded border text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                  placeholder="0"
-                                  min="0"
-                                  style={{
-                                    background: "transparent",
-                                    borderColor: "var(--color-border)",
-                                    color: "var(--color-foreground)",
-                                  }}
-                                />  
+                              <td className="px-3 py-2 text-sm">
+                                {item.member.name}
+                              </td>
+                              <td className="px-3 py-2 text-sm text-right font-mono">
+                                {item.score.toLocaleString()}
                               </td>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
