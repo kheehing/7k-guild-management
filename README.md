@@ -1,5 +1,7 @@
 # 7K Guild Management System
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
 A modern, high-performance guild management platform built for the **Ap0theosis** guild in Seven Knights. This application provides comprehensive member tracking, event management, performance analytics, and data export capabilities for guild leaders.
 
 ## ✨ Key Features
@@ -267,7 +269,15 @@ This is a private guild management tool. For feature requests or bug reports, pl
 
 ## 📝 License
 
-[MIT License](LICENSE)
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+
+This means:
+- ✅ You can use, modify, and distribute this software
+- ✅ You must share your source code if you run it on a server
+- ❌ You cannot create proprietary versions for commercial use
+- 📄 See [LICENSE](LICENSE) for full details
+
+**TL;DR**: If you host this application, you must make your source code available under AGPL-3.0.
 
 ---
 
