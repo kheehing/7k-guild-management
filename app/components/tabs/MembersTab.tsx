@@ -25,6 +25,16 @@ export default function MembersTab() {
 
   useEffect(() => {
     loadMembers();
+
+    // Set up real-time subscription
+    const membersChannel = supabase
+      .channel('members-tab-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => loadMembers())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(membersChannel);
+    };
   }, []);
 
   async function loadMembers() {
@@ -229,14 +239,7 @@ export default function MembersTab() {
               </tr>
             ) : (
               displayedMembers
-                .sort((a, b) => {
-                  const aCannotKick = a.role === 'cannot kick';
-                  const bCannotKick = b.role === 'cannot kick';
-                  if (aCannotKick !== bCannotKick) {
-                    return bCannotKick ? 1 : -1;
-                  }
-                  return a.name.localeCompare(b.name);
-                })
+                .sort((a, b) => a.name.localeCompare(b.name))
                 .map((member) => (
                   <tr
                     key={member.id}
@@ -308,7 +311,6 @@ export default function MembersTab() {
                             backgroundColor: member.kicked ? "#10b981" : "#f59e0b",
                             color: "white",
                           }}
-                          disabled={member.role === 'cannot kick'}
                         >
                           {member.kicked ? "Restore" : "Kick"}
                         </button>

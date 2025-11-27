@@ -14,6 +14,28 @@ interface Member {
   kicked?: boolean;
 }
 
+interface CastlePerformance {
+  castle: string;
+  attempts: number;
+  avgScore: number;
+  bestScore: number;
+  recentAvg: number;
+  previousAvg: number;
+  trend: number | null;
+  attendance: number;
+}
+
+interface BossPerformance {
+  boss: string;
+  attempts: number;
+  avgScore: number;
+  bestScore: number;
+  recentAvg: number;
+  previousAvg: number;
+  trend: number | null;
+  attendance: number;
+}
+
 interface PerformanceData {
   totalEvents: number;
   attendanceRate: number;
@@ -22,7 +44,7 @@ interface PerformanceData {
   lowestScore: number;
   recentAverage: number; // last 7 days
   previousAverage: number; // 7-14 days ago
-  improvement: number; // percentage change
+  improvement: number | null; // percentage change (null if insufficient data)
   castleRushAttendance: number;
   adventAttendance: number;
   castleRushEvents: number;
@@ -30,6 +52,8 @@ interface PerformanceData {
   daysSinceLastActive: number | null;
   scoreHistory: { date: string; score: number; type: string }[];
   weeklyActivity: number[];
+  castlePerformance: CastlePerformance[];
+  bossPerformance: BossPerformance[];
 }
 
 export default function MemberProfilePage() {
@@ -72,13 +96,13 @@ export default function MemberProfilePage() {
       const [crRes, aeRes] = await Promise.all([
         supabase
           .from('castle_rush_entry')
-          .select('attendance, score, castle_rush!inner(date)')
+          .select('attendance, score, castle_rush!inner(date, castle)')
           .eq('member_id', id)
           .order('castle_rush(date)', { ascending: false })
           .limit(100),
         supabase
           .from('advent_expedition_entry')
-          .select('attendance, total_score, date')
+          .select('attendance, total_score, date, boss')
           .eq('member_id', id)
           .order('date', { ascending: false })
           .limit(100)
@@ -88,14 +112,18 @@ export default function MemberProfilePage() {
         attendance: e.attendance,
         score: e.score,
         date: e.castle_rush.date,
-        type: 'Castle Rush'
+        castle: e.castle_rush.castle,
+        type: 'Castle Rush',
+        dayOfWeek: new Date(e.castle_rush.date).getDay() // 0=Sunday, 1=Monday, etc.
       }));
 
       const aeEntries = (aeRes.data || []).map((e: any) => ({
         attendance: e.attendance,
         score: e.total_score,
         date: e.date,
-        type: 'Advent'
+        boss: e.boss,
+        type: 'Advent',
+        dayOfWeek: new Date(e.date).getDay()
       }));
 
       const allEntries = [...crEntries, ...aeEntries];
@@ -109,7 +137,8 @@ export default function MemberProfilePage() {
       const highestScore = scores.length > 0 ? Math.max(...scores) : 0;
       const lowestScore = scores.length > 0 ? Math.min(...scores) : 0;
 
-      // Recent performance (last 7 days)
+      // Recent performance - compare same day of week
+      // Get last 7 days and previous 7 days (7-14 days ago)
       const now = new Date();
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -120,13 +149,48 @@ export default function MemberProfilePage() {
         return d >= fourteenDaysAgo && d < sevenDaysAgo;
       });
 
-      const recentScores = recentEntries.map(e => e.score);
-      const previousScores = previousEntries.map(e => e.score);
+      // Group by day of week for fair comparison
+      const recentByDay: Record<number, number[]> = {};
+      const previousByDay: Record<number, number[]> = {};
 
-      const recentAverage = recentScores.length > 0 ? recentScores.reduce((a, b) => a + b, 0) / recentScores.length : 0;
-      const previousAverage = previousScores.length > 0 ? previousScores.reduce((a, b) => a + b, 0) / previousScores.length : 0;
+      recentEntries.forEach(e => {
+        if (!recentByDay[e.dayOfWeek]) recentByDay[e.dayOfWeek] = [];
+        recentByDay[e.dayOfWeek].push(e.score);
+      });
 
-      const improvement = previousAverage > 0 ? ((recentAverage - previousAverage) / previousAverage) * 100 : 0;
+      previousEntries.forEach(e => {
+        if (!previousByDay[e.dayOfWeek]) previousByDay[e.dayOfWeek] = [];
+        previousByDay[e.dayOfWeek].push(e.score);
+      });
+
+      // Calculate average for each day that appears in both periods
+      let recentTotal = 0;
+      let recentCount = 0;
+      let previousTotal = 0;
+      let previousCount = 0;
+
+      // Only compare days that exist in both periods
+      Object.keys(recentByDay).forEach(dayStr => {
+        const day = parseInt(dayStr);
+        if (previousByDay[day]) {
+          const recentDayScores = recentByDay[day];
+          const previousDayScores = previousByDay[day];
+          
+          recentTotal += recentDayScores.reduce((a, b) => a + b, 0);
+          recentCount += recentDayScores.length;
+          
+          previousTotal += previousDayScores.reduce((a, b) => a + b, 0);
+          previousCount += previousDayScores.length;
+        }
+      });
+
+      const recentAverage = recentCount > 0 ? recentTotal / recentCount : 0;
+      const previousAverage = previousCount > 0 ? previousTotal / previousCount : 0;
+
+      // Only show improvement if we have data in both periods (at least 2 matching days)
+      const improvement = (previousAverage > 0 && recentCount >= 2 && previousCount >= 2) 
+        ? ((recentAverage - previousAverage) / previousAverage) * 100 
+        : null;
 
       // Event type breakdown
       const crAttended = crEntries.filter((e: any) => e.attendance).length;
@@ -161,6 +225,86 @@ export default function MemberProfilePage() {
         weeklyActivity[i] = dayEntries.length;
       }
 
+      // Castle Performance Analysis
+      const castleGroups: Record<string, any[]> = {};
+      crEntries.forEach(e => {
+        if (!castleGroups[e.castle]) castleGroups[e.castle] = [];
+        castleGroups[e.castle].push(e);
+      });
+
+      const castlePerformance: CastlePerformance[] = Object.entries(castleGroups).map(([castle, entries]) => {
+        const attendedEntries = entries.filter(e => e.attendance);
+        const scores = attendedEntries.map(e => e.score);
+        const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+        const bestScore = scores.length > 0 ? Math.max(...scores) : 0;
+        
+        // Recent vs previous for this castle (last 3 vs previous 3)
+        const sortedEntries = attendedEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const recentEntries = sortedEntries.slice(0, 3);
+        const previousEntries = sortedEntries.slice(3, 6);
+        
+        const recentScores = recentEntries.map(e => e.score);
+        const previousScores = previousEntries.map(e => e.score);
+        
+        const recentAvg = recentScores.length > 0 ? recentScores.reduce((a, b) => a + b, 0) / recentScores.length : 0;
+        const previousAvg = previousScores.length > 0 ? previousScores.reduce((a, b) => a + b, 0) / previousScores.length : 0;
+        
+        const trend = (previousAvg > 0 && recentScores.length >= 2 && previousScores.length >= 2) 
+          ? ((recentAvg - previousAvg) / previousAvg) * 100 
+          : null;
+        
+        return {
+          castle,
+          attempts: entries.length,
+          avgScore,
+          bestScore,
+          recentAvg,
+          previousAvg,
+          trend,
+          attendance: entries.length > 0 ? (attendedEntries.length / entries.length) * 100 : 0
+        };
+      }).sort((a, b) => b.avgScore - a.avgScore);
+
+      // Boss Performance Analysis
+      const bossGroups: Record<string, any[]> = {};
+      aeEntries.forEach(e => {
+        if (!bossGroups[e.boss]) bossGroups[e.boss] = [];
+        bossGroups[e.boss].push(e);
+      });
+
+      const bossPerformance: BossPerformance[] = Object.entries(bossGroups).map(([boss, entries]) => {
+        const attendedEntries = entries.filter(e => e.attendance);
+        const scores = attendedEntries.map(e => e.score);
+        const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+        const bestScore = scores.length > 0 ? Math.max(...scores) : 0;
+        
+        // Recent vs previous for this boss (last 3 vs previous 3)
+        const sortedEntries = attendedEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const recentEntries = sortedEntries.slice(0, 3);
+        const previousEntries = sortedEntries.slice(3, 6);
+        
+        const recentScores = recentEntries.map(e => e.score);
+        const previousScores = previousEntries.map(e => e.score);
+        
+        const recentAvg = recentScores.length > 0 ? recentScores.reduce((a, b) => a + b, 0) / recentScores.length : 0;
+        const previousAvg = previousScores.length > 0 ? previousScores.reduce((a, b) => a + b, 0) / previousScores.length : 0;
+        
+        const trend = (previousAvg > 0 && recentScores.length >= 2 && previousScores.length >= 2) 
+          ? ((recentAvg - previousAvg) / previousAvg) * 100 
+          : null;
+        
+        return {
+          boss,
+          attempts: entries.length,
+          avgScore,
+          bestScore,
+          recentAvg,
+          previousAvg,
+          trend,
+          attendance: entries.length > 0 ? (attendedEntries.length / entries.length) * 100 : 0
+        };
+      }).sort((a, b) => b.avgScore - a.avgScore);
+
       return {
         totalEvents,
         attendanceRate,
@@ -176,7 +320,9 @@ export default function MemberProfilePage() {
         adventEvents: aeEntries.length,
         daysSinceLastActive,
         scoreHistory,
-        weeklyActivity
+        weeklyActivity,
+        castlePerformance,
+        bossPerformance
       };
     } catch (err) {
       return {
@@ -187,14 +333,16 @@ export default function MemberProfilePage() {
         lowestScore: 0,
         recentAverage: 0,
         previousAverage: 0,
-        improvement: 0,
+        improvement: null,
         castleRushAttendance: 0,
         adventAttendance: 0,
         castleRushEvents: 0,
         adventEvents: 0,
         daysSinceLastActive: null,
         scoreHistory: [],
-        weeklyActivity: []
+        weeklyActivity: [],
+        castlePerformance: [],
+        bossPerformance: []
       };
     }
   }
@@ -328,7 +476,7 @@ export default function MemberProfilePage() {
             </div>
 
             {/* Performance Indicator */}
-            {performance && performance.totalEvents > 0 && (
+            {performance && performance.totalEvents > 0 && performance.improvement !== null && (
               <div
                 className="px-6 py-4 rounded-lg text-center"
                 style={{
@@ -371,7 +519,7 @@ export default function MemberProfilePage() {
 
         {/* Performance Stats Grid */}
         {performance && performance.totalEvents > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {/* Attendance Card */}
             <div
               className="p-4 rounded-lg"
@@ -402,7 +550,7 @@ export default function MemberProfilePage() {
               </div>
             </div>
 
-            {/* Average Score Card */}
+            {/* Consistency & Reliability Card */}
             <div
               className="p-4 rounded-lg"
               style={{
@@ -411,56 +559,51 @@ export default function MemberProfilePage() {
               }}
             >
               <div className="flex items-center gap-2 mb-3">
-                <FaChartLine style={{ color: "#8b5cf6" }} />
-                <span className="text-sm font-medium">Average Score</span>
+                <FaExclamationTriangle style={{ color: "#f59e0b" }} />
+                <span className="text-sm font-medium">Reliability Status</span>
               </div>
-              <div className="text-3xl font-bold mb-2">
-                {formatScore(performance.averageScore)}
-              </div>
-              <div className="text-xs mb-2" style={{ color: "var(--color-muted)" }}>
-                All-time average
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span style={{ color: "var(--color-muted)" }}>Recent (7d)</span>
-                  <span style={{ color: getImprovementColor(performance.improvement) }}>
-                    {formatScore(performance.recentAverage)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span style={{ color: "var(--color-muted)" }}>Previous (7d)</span>
-                  <span>{formatScore(performance.previousAverage)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Peak Performance Card */}
-            <div
-              className="p-4 rounded-lg"
-              style={{
-                backgroundColor: "var(--color-surface)",
-                border: "1px solid var(--color-border)",
-              }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <FaTrophy style={{ color: "#f59e0b" }} />
-                <span className="text-sm font-medium">Peak Performance</span>
-              </div>
-              <div className="text-3xl font-bold mb-2">
-                {formatScore(performance.highestScore)}
-              </div>
-              <div className="text-xs mb-2" style={{ color: "var(--color-muted)" }}>
-                Personal best
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span style={{ color: "var(--color-muted)" }}>Lowest</span>
-                  <span>{formatScore(performance.lowestScore)}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span style={{ color: "var(--color-muted)" }}>Range</span>
-                  <span>{formatScore(performance.highestScore - performance.lowestScore)}</span>
-                </div>
+              <div className="space-y-2">
+                {performance.daysSinceLastActive !== null && performance.daysSinceLastActive <= 1 ? (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FaCheckCircle style={{ color: "#10b981" }} />
+                    <span style={{ color: "#10b981" }}>Active & Up to Date</span>
+                  </div>
+                ) : performance.daysSinceLastActive !== null && performance.daysSinceLastActive > 3 ? (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FaExclamationTriangle style={{ color: "#ef4444" }} />
+                    <span style={{ color: "#ef4444" }}>Inactive ({performance.daysSinceLastActive} days)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span style={{ color: "#f59e0b" }}>Last seen {performance.daysSinceLastActive} days ago</span>
+                  </div>
+                )}
+                
+                {performance.attendanceRate < 70 && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FaExclamationTriangle style={{ color: "#ef4444" }} />
+                    <span style={{ color: "#ef4444" }}>Low Attendance Risk</span>
+                  </div>
+                )}
+                
+                {performance.improvement !== null && performance.improvement < -15 && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FaExclamationTriangle style={{ color: "#ef4444" }} />
+                    <span style={{ color: "#ef4444" }}>Performance Declining</span>
+                  </div>
+                )}
+                
+                {performance.attendanceRate >= 80 && (performance.improvement === null || performance.improvement >= 0) && (performance.daysSinceLastActive === null || performance.daysSinceLastActive <= 2) && (
+                  <div className="p-2 rounded text-sm text-center" style={{ backgroundColor: "rgba(16, 185, 129, 0.1)", color: "#10b981" }}>
+                    ✓ Reliable Guild Member
+                  </div>
+                )}
+                
+                {(performance.attendanceRate < 70 || (performance.improvement !== null && performance.improvement < -15) || (performance.daysSinceLastActive !== null && performance.daysSinceLastActive > 3)) && (
+                  <div className="p-2 rounded text-sm text-center" style={{ backgroundColor: "rgba(239, 68, 68, 0.1)", color: "#ef4444" }}>
+                    ⚠ Potential Liability
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -559,6 +702,154 @@ export default function MemberProfilePage() {
                 <div className="w-3 h-3 rounded" style={{ backgroundColor: "#8b5cf6" }} />
                 <span style={{ color: "var(--color-muted)" }}>Advent Expedition</span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Castle Rush Performance Breakdown */}
+        {performance && performance.castlePerformance.length > 0 && (
+          <div
+            className="p-4 rounded-lg mb-6"
+            style={{
+              backgroundColor: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+            }}
+          >
+            <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+              <FaTrophy style={{ color: "#3b82f6" }} />
+              Castle Rush Performance by Castle
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {performance.castlePerformance.map((castle) => (
+                <div
+                  key={castle.castle}
+                  className="p-3 rounded"
+                  style={{
+                    backgroundColor: "rgba(var(--color-primary-rgb, 59, 130, 246), 0.05)",
+                    border: `2px solid ${
+                      castle.trend !== null && castle.trend < -15 ? "#ef4444" : 
+                      castle.trend !== null && castle.trend > 15 ? "#10b981" : 
+                      "var(--color-border)"
+                    }`,
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{castle.castle}</span>
+                      <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "rgba(59, 130, 246, 0.1)", color: "#3b82f6" }}>
+                        {castle.attempts}×
+                      </span>
+                    </div>
+                    {castle.trend !== null && (
+                      <div
+                        className="text-lg font-bold flex items-center gap-1"
+                        style={{
+                          color: castle.trend > 0 ? "#10b981" : castle.trend < 0 ? "#ef4444" : "var(--color-muted)",
+                        }}
+                      >
+                        <span>{castle.trend > 0 ? "↗" : castle.trend < 0 ? "↘" : "→"}</span>
+                        <span>{Math.abs(castle.trend).toFixed(0)}%</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="text-xs mb-1" style={{ color: "var(--color-muted)" }}>
+                    Recent: {formatScore(castle.recentAvg)} • Previous: {formatScore(castle.previousAvg)}
+                  </div>
+                  
+                  {castle.trend !== null && castle.trend < -15 && (
+                    <div className="text-xs mt-2 px-2 py-1 rounded" style={{ backgroundColor: "rgba(239, 68, 68, 0.1)", color: "#ef4444" }}>
+                      ⚠ Significant decline - needs attention
+                    </div>
+                  )}
+                  
+                  {castle.trend !== null && castle.trend > 15 && (
+                    <div className="text-xs mt-2 px-2 py-1 rounded" style={{ backgroundColor: "rgba(16, 185, 129, 0.1)", color: "#10b981" }}>
+                      ✓ Strong improvement
+                    </div>
+                  )}
+                  
+                  {castle.attendance < 60 && (
+                    <div className="text-xs mt-2 px-2 py-1 rounded" style={{ backgroundColor: "rgba(239, 68, 68, 0.1)", color: "#ef4444" }}>
+                      ⚠ Low attendance ({castle.attendance.toFixed(0)}%)
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Advent Expedition Boss Performance */}
+        {performance && performance.bossPerformance.length > 0 && (
+          <div
+            className="p-4 rounded-lg mb-6"
+            style={{
+              backgroundColor: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+            }}
+          >
+            <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+              <FaTrophy style={{ color: "#8b5cf6" }} />
+              Advent Expedition Performance by Boss
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {performance.bossPerformance.map((boss) => (
+                <div
+                  key={boss.boss}
+                  className="p-3 rounded"
+                  style={{
+                    backgroundColor: "rgba(139, 92, 246, 0.05)",
+                    border: `2px solid ${
+                      boss.trend !== null && boss.trend < -15 ? "#ef4444" : 
+                      boss.trend !== null && boss.trend > 15 ? "#10b981" : 
+                      "var(--color-border)"
+                    }`,
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{boss.boss}</span>
+                      <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "rgba(139, 92, 246, 0.1)", color: "#8b5cf6" }}>
+                        {boss.attempts}×
+                      </span>
+                    </div>
+                    {boss.trend !== null && (
+                      <div
+                        className="text-lg font-bold flex items-center gap-1"
+                        style={{
+                          color: boss.trend > 0 ? "#10b981" : boss.trend < 0 ? "#ef4444" : "var(--color-muted)",
+                        }}
+                      >
+                        <span>{boss.trend > 0 ? "↗" : boss.trend < 0 ? "↘" : "→"}</span>
+                        <span>{Math.abs(boss.trend).toFixed(0)}%</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="text-xs mb-1" style={{ color: "var(--color-muted)" }}>
+                    Recent: {formatScore(boss.recentAvg)} • Previous: {formatScore(boss.previousAvg)}
+                  </div>
+                  
+                  {boss.trend !== null && boss.trend < -15 && (
+                    <div className="text-xs mt-2 px-2 py-1 rounded" style={{ backgroundColor: "rgba(239, 68, 68, 0.1)", color: "#ef4444" }}>
+                      ⚠ Significant decline - needs attention
+                    </div>
+                  )}
+                  
+                  {boss.trend !== null && boss.trend > 15 && (
+                    <div className="text-xs mt-2 px-2 py-1 rounded" style={{ backgroundColor: "rgba(16, 185, 129, 0.1)", color: "#10b981" }}>
+                      ✓ Strong improvement
+                    </div>
+                  )}
+                  
+                  {boss.attendance < 60 && (
+                    <div className="text-xs mt-2 px-2 py-1 rounded" style={{ backgroundColor: "rgba(239, 68, 68, 0.1)", color: "#ef4444" }}>
+                      ⚠ Low attendance ({boss.attendance.toFixed(0)}%)
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}

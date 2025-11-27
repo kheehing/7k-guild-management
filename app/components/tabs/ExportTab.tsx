@@ -49,10 +49,18 @@ export default function ExportTab() {
   const [castleRushEvents, setCastleRushEvents] = useState<CastleRushEvent[]>([]);
   const [adventEvents, setAdventEvents] = useState<AdventEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
 
   useEffect(() => {
     loadEvents();
   }, []);
+
+  function showToast(message: string) {
+    setToast({ message, visible: true });
+    setTimeout(() => {
+      setToast({ message: '', visible: false });
+    }, 3000);
+  }
 
   async function loadEvents() {
     setLoading(true);
@@ -173,21 +181,116 @@ export default function ExportTab() {
       discordText += `• Total Score: **${totalScore.toLocaleString()}** (${grade.grade})\n`;
       discordText += `• Attendance: **${sortedEntries.length}** members\n`;
       discordText += `• Average Score: **${avgScore.toLocaleString()}**\n`;
-      discordText += `\n**Top Performers:**\n`;
+      discordText += `\n**Member Scores:**\n`;
       
-      sortedEntries.slice(0, 10).forEach((entry, idx) => {
+      sortedEntries.forEach((entry, idx) => {
         const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
-        discordText += `${medal} **${entry.name}** - ${entry.score.toLocaleString()}\n`;
+        const roleTag = entry.role ? ` [${entry.role}]` : '';
+        discordText += `${medal} **${entry.name}**${roleTag} - ${entry.score.toLocaleString()}\n`;
       });
 
-      if (sortedEntries.length > 10) {
-        discordText += `\n_...and ${sortedEntries.length - 10} more members_\n`;
+      await navigator.clipboard.writeText(discordText);
+      showToast('Discord message copied to clipboard! 📋');
+    } catch (error) {
+      showToast('Failed to export data');
+    }
+  }
+
+  async function postCastleRushToDiscord(eventId: string) {
+    const webhookUrl = process.env.NEXT_PUBLIC_DISCORD_WEBHOOK_URL;
+    
+    if (!webhookUrl) {
+      showToast('Discord webhook not configured');
+      return;
+    }
+
+    try {
+      const { data: crData, error: crError } = await supabase
+        .from('castle_rush')
+        .select(`
+          id,
+          castle,
+          date,
+          castle_rush_entry (
+            score,
+            attendance,
+            members (
+              name,
+              role
+            )
+          )
+        `)
+        .eq('id', eventId)
+        .single();
+
+      if (crError) throw crError;
+
+      const entries = crData.castle_rush_entry || [];
+      const attendedEntries = entries.filter((e: any) => e.attendance);
+      const sortedEntries = attendedEntries
+        .map((e: any) => ({
+          name: e.members?.name || 'Unknown',
+          role: e.members?.role || 'Member',
+          score: e.score || 0
+        }))
+        .sort((a, b) => b.score - a.score);
+
+      const totalScore = sortedEntries.reduce((sum, e) => sum + e.score, 0);
+      const avgScore = sortedEntries.length > 0 ? Math.round(totalScore / sortedEntries.length) : 0;
+      const grade = getScoreGrade(totalScore);
+      const date = new Date(crData.date + 'T00:00:00').toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      // Build member list
+      let memberList = '';
+      sortedEntries.forEach((entry, idx) => {
+        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+        const roleTag = entry.role ? ` [${entry.role}]` : '';
+        memberList += `${medal} **${entry.name}**${roleTag} - ${entry.score.toLocaleString()}\n`;
+      });
+
+      // Send to Discord with embed
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          embeds: [{
+            title: `🏰 Castle Rush - ${crData.castle}`,
+            description: `📅 ${date}`,
+            color: parseInt(grade.color.replace('#', ''), 16),
+            fields: [
+              {
+                name: '📊 Guild Performance',
+                value: `• Total Score: **${totalScore.toLocaleString()}** (${grade.grade})\n• Attendance: **${sortedEntries.length}** members\n• Average Score: **${avgScore.toLocaleString()}**`,
+                inline: false
+              },
+              {
+                name: '👥 Member Scores',
+                value: memberList.length > 1024 ? memberList.substring(0, 1020) + '...' : memberList,
+                inline: false
+              }
+            ],
+            timestamp: new Date().toISOString(),
+            footer: {
+              text: '7K Guild Management'
+            }
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Discord webhook failed');
       }
 
-      await navigator.clipboard.writeText(discordText);
-      alert('Discord message copied to clipboard! 📋');
+      showToast('Posted to Discord! 🎉');
     } catch (error) {
-      alert('Failed to export data');
+      showToast('Failed to post to Discord');
     }
   }
 
@@ -252,9 +355,9 @@ export default function ExportTab() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      alert('JSON file downloaded! 📥');
+      showToast('JSON file downloaded! 📥');
     } catch (error) {
-      alert('Failed to export data');
+      showToast('Failed to export data');
     }
   }
 
@@ -315,21 +418,125 @@ export default function ExportTab() {
       discordText += `• Total Score: **${totalScore.toLocaleString()}** (${grade.grade})\n`;
       discordText += `• Participants: **${sortedMembers.length}** members\n`;
       discordText += `• Average Score: **${avgScore.toLocaleString()}**\n`;
-      discordText += `\n**Top Performers:**\n`;
+      discordText += `\n**Member Scores:**\n`;
       
-      sortedMembers.slice(0, 10).forEach((member, idx) => {
+      sortedMembers.forEach((member, idx) => {
         const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
-        discordText += `${medal} **${member.name}** - ${member.score.toLocaleString()}\n`;
+        const roleTag = member.role ? ` [${member.role}]` : '';
+        discordText += `${medal} **${member.name}**${roleTag} - ${member.score.toLocaleString()}\n`;
       });
 
-      if (sortedMembers.length > 10) {
-        discordText += `\n_...and ${sortedMembers.length - 10} more members_\n`;
+      await navigator.clipboard.writeText(discordText);
+      showToast('Discord message copied to clipboard! 📋');
+    } catch (error) {
+      showToast('Failed to export data');
+    }
+  }
+
+  async function postAdventToDiscord(eventId: string) {
+    const webhookUrl = process.env.NEXT_PUBLIC_DISCORD_WEBHOOK_URL;
+    
+    if (!webhookUrl) {
+      showToast('Discord webhook not configured');
+      return;
+    }
+
+    try {
+      const { data: aeData, error: aeError } = await supabase
+        .from('advent_expedition')
+        .select(`
+          id,
+          date,
+          advent_expedition_entry (
+            total_score,
+            attendance,
+            boss,
+            members (
+              name,
+              role
+            )
+          )
+        `)
+        .eq('id', eventId)
+        .single();
+
+      if (aeError) throw aeError;
+
+      const entries = aeData.advent_expedition_entry || [];
+      const attendedEntries = entries.filter((e: any) => e.attendance);
+      
+      // Aggregate scores by member
+      const memberScores = new Map<string, { name: string; role: string; score: number }>();
+      attendedEntries.forEach((e: any) => {
+        const name = e.members?.name || 'Unknown';
+        const existing = memberScores.get(name);
+        if (existing) {
+          existing.score += e.total_score || 0;
+        } else {
+          memberScores.set(name, {
+            name,
+            role: e.members?.role || 'Member',
+            score: e.total_score || 0
+          });
+        }
+      });
+
+      const sortedMembers = Array.from(memberScores.values()).sort((a, b) => b.score - a.score);
+      const totalScore = sortedMembers.reduce((sum, m) => sum + m.score, 0);
+      const avgScore = sortedMembers.length > 0 ? Math.round(totalScore / sortedMembers.length) : 0;
+      const grade = getAdventGrade(totalScore);
+      const date = new Date(aeData.date).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      // Build member list
+      let memberList = '';
+      sortedMembers.forEach((member, idx) => {
+        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`;
+        const roleTag = member.role ? ` [${member.role}]` : '';
+        memberList += `${medal} **${member.name}**${roleTag} - ${member.score.toLocaleString()}\n`;
+      });
+
+      // Send to Discord with embed
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          embeds: [{
+            title: '🐉 Advent Expedition',
+            description: `📅 ${date}`,
+            color: parseInt(grade.color.replace('#', ''), 16),
+            fields: [
+              {
+                name: '📊 Guild Performance',
+                value: `• Total Score: **${totalScore.toLocaleString()}** (${grade.grade})\n• Participants: **${sortedMembers.length}** members\n• Average Score: **${avgScore.toLocaleString()}**`,
+                inline: false
+              },
+              {
+                name: '👥 Member Scores',
+                value: memberList.length > 1024 ? memberList.substring(0, 1020) + '...' : memberList,
+                inline: false
+              }
+            ],
+            timestamp: new Date().toISOString(),
+            footer: {
+              text: '7K Guild Management'
+            }
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Discord webhook failed');
       }
 
-      await navigator.clipboard.writeText(discordText);
-      alert('Discord message copied to clipboard! 📋');
+      showToast('Posted to Discord! 🎉');
     } catch (error) {
-      alert('Failed to export data');
+      showToast('Failed to post to Discord');
     }
   }
 
@@ -395,9 +602,9 @@ export default function ExportTab() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      alert('JSON file downloaded! 📥');
+      showToast('JSON file downloaded! 📥');
     } catch (error) {
-      alert('Failed to export data');
+      showToast('Failed to export data');
     }
   }
 
@@ -484,7 +691,7 @@ export default function ExportTab() {
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => exportCastleRushToDiscord(event.id)}
+                        onClick={() => postCastleRushToDiscord(event.id)}
                         className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-opacity"
                         style={{
                           backgroundColor: "#5865F2",
@@ -492,7 +699,18 @@ export default function ExportTab() {
                         }}
                       >
                         <FaDiscord size={14} />
-                        Discord
+                        Post
+                      </button>
+                      <button
+                        onClick={() => exportCastleRushToDiscord(event.id)}
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-opacity"
+                        style={{
+                          backgroundColor: "#7289DA",
+                          color: "white",
+                        }}
+                      >
+                        <FaDiscord size={14} />
+                        Copy
                       </button>
                       <button
                         onClick={() => exportCastleRushToJSON(event.id)}
@@ -578,7 +796,7 @@ export default function ExportTab() {
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => exportAdventToDiscord(event.id)}
+                        onClick={() => postAdventToDiscord(event.id)}
                         className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-opacity"
                         style={{
                           backgroundColor: "#5865F2",
@@ -586,7 +804,18 @@ export default function ExportTab() {
                         }}
                       >
                         <FaDiscord size={14} />
-                        Discord
+                        Post
+                      </button>
+                      <button
+                        onClick={() => exportAdventToDiscord(event.id)}
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded text-sm font-medium hover:opacity-90 transition-opacity"
+                        style={{
+                          backgroundColor: "#7289DA",
+                          color: "white",
+                        }}
+                      >
+                        <FaDiscord size={14} />
+                        Copy
                       </button>
                       <button
                         onClick={() => exportAdventToJSON(event.id)}
@@ -611,6 +840,22 @@ export default function ExportTab() {
           )}
         </div>
       </div>
+
+      {/* Toast Notification */}
+      {toast.visible && (
+        <div
+          className="fixed bottom-4 left-4 px-4 py-3 rounded-lg shadow-lg transition-opacity duration-300 flex items-center gap-2"
+          style={{
+            backgroundColor: "var(--color-surface)",
+            border: "2px solid var(--color-primary)",
+            color: "var(--color-foreground)",
+            zIndex: 1000,
+            opacity: toast.visible ? 1 : 0,
+          }}
+        >
+          <span className="text-sm font-medium">{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

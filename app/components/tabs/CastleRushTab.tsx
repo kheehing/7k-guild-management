@@ -16,7 +16,7 @@ interface CastleRushEntry {
 }
 
 // Function to get grade based on score
-function getScoreGrade(score: number): { grade: string; color: string; bgColor: string } {
+function getScoreGrade(score: number): { grade  : string; color: string; bgColor: string } {
   if (score >= 100000000) return { grade: "EX+", color: "#FF1493", bgColor: "linear-gradient(135deg, #FFB6C1 0%, #FF69B4 50%, #FF1493 100%)" }; // Pink EX
   if (score >= 75000000) return { grade: "EX", color: "#4169E1", bgColor: "linear-gradient(135deg, #B8C5FF 0%, #6B8EFF 50%, #4169E1 100%)" }; // Blue EX
   if (score >= 50000000) return { grade: "SSS", color: "#8B7355", bgColor: "linear-gradient(135deg, #D4AF7A 0%, #B8956B 50%, #8B7355 100%)" }; // SSS
@@ -82,6 +82,22 @@ export default function CastleRushTab() {
 
   useEffect(() => {
     loadCastleRushData();
+
+    // Set up real-time subscriptions
+    const crChannel = supabase
+      .channel('castle-rush-tab-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'castle_rush' }, () => loadCastleRushData())
+      .subscribe();
+
+    const crEntryChannel = supabase
+      .channel('castle-rush-entry-tab-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'castle_rush_entry' }, () => loadCastleRushData())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(crChannel);
+      supabase.removeChannel(crEntryChannel);
+    };
   }, [currentDate]);
 
   async function loadCastleRushData() {
@@ -108,17 +124,13 @@ export default function CastleRushTab() {
 
       if (error) throw error;
 
-      // Get total member count
-      const { count: totalMembers } = await supabase
-        .from('members')
-        .select('*', { count: 'exact', head: true })
-        .eq('kicked', false);
-
       // Calculate totals for each castle rush
       const processedData = (castleRushes || []).map((cr: any) => {
         const entries = cr.castle_rush_entry || [];
         const total_score = entries.reduce((sum: number, e: any) => sum + (e.score || 0), 0);
         const attendance_count = entries.filter((e: any) => e.attendance).length;
+        // Count unique members by counting total entry records (one per member)
+        const total_members = entries.length;
         
         return {
           id: cr.id,
@@ -126,7 +138,7 @@ export default function CastleRushTab() {
           date: cr.date,
           total_score,
           attendance_count,
-          total_members: totalMembers || 0,
+          total_members,
         };
       });
 
@@ -299,7 +311,7 @@ export default function CastleRushTab() {
                 ) : entry ? (
                   <div className="text-xs space-y-0.5">
                     <div style={{ color: "var(--color-muted)", fontSize: "0.7rem" }}>
-                      {entry.attendance_count}/{entry.total_members}
+                      {entry.total_members} entries
                     </div>
                     <div 
                       className="font-bold px-2 py-1 rounded inline-block"

@@ -60,6 +60,66 @@ export default function OverviewTab() {
 
   useEffect(() => {
     loadOverview();
+
+    // Set up real-time subscriptions for live updates
+    const membersChannel = supabase
+      .channel('overview-members-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'members' }, 
+        () => {
+          loadOverview();
+        }
+      )
+      .subscribe();
+
+    const crEntryChannel = supabase
+      .channel('overview-cr-entry-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'castle_rush_entry' }, 
+        () => {
+          loadOverview();
+        }
+      )
+      .subscribe();
+
+    const aeEntryChannel = supabase
+      .channel('overview-ae-entry-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'advent_expedition_entry' }, 
+        () => {
+          loadOverview();
+        }
+      )
+      .subscribe();
+
+    const crChannel = supabase
+      .channel('overview-cr-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'castle_rush' }, 
+        () => {
+          loadOverview();
+        }
+      )
+      .subscribe();
+
+    const aeChannel = supabase
+      .channel('overview-ae-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'advent_expedition' }, 
+        () => {
+          loadOverview();
+        }
+      )
+      .subscribe();
+
+    // Cleanup subscriptions on unmount
+    return () => {
+      supabase.removeChannel(membersChannel);
+      supabase.removeChannel(crEntryChannel);
+      supabase.removeChannel(aeEntryChannel);
+      supabase.removeChannel(crChannel);
+      supabase.removeChannel(aeChannel);
+    };
   }, []);
 
   async function loadOverview() {
@@ -161,7 +221,8 @@ export default function OverviewTab() {
         ? allRecentScores.reduce((a, b) => a + b, 0) / allRecentScores.length
         : 0;
 
-      // Count at-risk members (attendance < 60% or inactive 3+ days)
+      // Count at-risk members (same criteria as Analysis tab)
+      // Must have 3+ entries, attendance < 70% OR inactive 3+ days
       const now = Date.now();
       const atRiskCount = members.filter(m => {
         if (m.kicked) return false;
@@ -169,6 +230,9 @@ export default function OverviewTab() {
           ...crEntries.filter((e: any) => e.member_id === m.id).map((e: any) => ({ ...e, date: e.castle_rush.date })),
           ...aeEntries.filter((e: any) => e.member_id === m.id)
         ];
+        
+        // Must have at least 3 entries to be considered at-risk
+        if (memberEntries.length < 3) return false;
         
         const attended = memberEntries.filter((e: any) => e.attendance);
         const attendanceRate = memberEntries.length > 0 ? (attended.length / memberEntries.length) * 100 : 0;
@@ -178,7 +242,7 @@ export default function OverviewTab() {
           : 0;
         const daysSinceLastEntry = lastEntryDate ? Math.floor((now - lastEntryDate) / (1000 * 60 * 60 * 24)) : 999;
         
-        return attendanceRate < 60 || daysSinceLastEntry >= 3;
+        return attendanceRate < 70 || daysSinceLastEntry >= 3;
       }).length;
 
       // Events this week

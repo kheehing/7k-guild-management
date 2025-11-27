@@ -69,6 +69,22 @@ export default function AdventTab() {
 
   useEffect(() => {
     loadAdventData();
+
+    // Set up real-time subscriptions
+    const aeChannel = supabase
+      .channel('advent-tab-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'advent_expedition' }, () => loadAdventData())
+      .subscribe();
+
+    const aeEntryChannel = supabase
+      .channel('advent-entry-tab-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'advent_expedition_entry' }, () => loadAdventData())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(aeChannel);
+      supabase.removeChannel(aeEntryChannel);
+    };
   }, []);
 
   async function loadAdventData() {

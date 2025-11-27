@@ -61,7 +61,25 @@ SUPABASE_SECRET_KEY=eyJhbGc...              # Service role JWT (long token, not 
 - Tab components (`app/components/tabs/*Tab.tsx`) fetch data directly via `supabase.from()` using client
 - Reusable UI components use props and callbacks, not direct data fetching
 - Modals toggle via local state (`isAddOpen`) with backdrop overlay pattern
-- Loading states: `if (loading) return <div>Loading...</div>` before main render
+- Loading states: Set to false immediately after fetching members for faster UI, background operations async
+- **Entry modals** use search-based quick entry system (type name + space + score + Enter)
+
+**Modal entry patterns** (CastleRushEntryModal, HistoricalCastleRushModal):
+- **New entries**: Blank canvas, no members shown initially
+- **Edit mode**: Shows only previously saved members (excludes kicked in display, but searchable)
+- **Search system**: 
+  - Type member name → dropdown appears with all members (including kicked)
+  - Add space + score → green border indicates ready
+  - Press Enter → auto-adds member and sets score
+  - Dropdown shows status: "(active)" green, "(kicked)" red for entered members
+- **Quick entry workflow**: Members automatically added when score entered via search
+- **Member management**: Add/Delete buttons, entries object tracks scores separately from member list
+- **State structure**:
+  - `allMembers`: Full roster for searching
+  - `enteredMembers`: Currently entered participants
+  - `entries`: Score mapping `{ memberId: "score" }`
+  - `searchQuery`: Current search text
+  - `isEditMode`: Boolean flag for edit vs. add mode
 
 **Data fetching**:
 ```tsx

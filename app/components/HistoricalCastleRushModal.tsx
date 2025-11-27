@@ -42,28 +42,20 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
   const [selectedDate, setSelectedDate] = useState("");
   const [castleInfo, setCastleInfo] = useState<CastleInfo | null>(null);
   const [participants, setParticipants] = useState<ParticipantEntry[]>([]);
-  const [currentName, setCurrentName] = useState("");
-  const [currentScore, setCurrentScore] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-
-  // Filter members based on current name input
-  const filteredMembers = allMembers.filter(m => 
-    currentName.trim() && 
-    m.name.toLowerCase().includes(currentName.trim().toLowerCase()) &&
-    !participants.some(p => p.memberId === m.id) // Exclude already added members
-  ).slice(0, 5); // Limit to 5 suggestions
+  const [searchQuery, setSearchQuery] = useState("");
+  const [entries, setEntries] = useState<Record<string, string>>({});
+  const [showNotification, setShowNotification] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       loadMembers();
       setSelectedDate("");
       setParticipants([]);
-      setCurrentName("");
-      setCurrentScore("");
+      setSearchQuery("");
+      setEntries({});
       setCastleInfo(null);
-      setShowSuggestions(false);
     }
   }, [isOpen]);
 
@@ -110,55 +102,91 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
     }
   }
 
-  const handleAddParticipant = () => {
-    if (!currentName.trim()) {
-      alert("Please enter a member name");
-      return;
+  const handleScoreChange = (memberId: string, score: string) => {
+    setEntries(prev => ({
+      ...prev,
+      [memberId]: score
+    }));
+  };
+
+  const handleDeleteEntry = (memberId: string) => {
+    setParticipants(prev => prev.filter(p => p.memberId !== memberId));
+    setEntries(prev => {
+      const newEntries = { ...prev };
+      delete newEntries[memberId];
+      return newEntries;
+    });
+  };
+
+  const handleAddMemberToEntry = (memberId: string) => {
+    const memberToAdd = allMembers.find(m => m.id === memberId);
+    if (memberToAdd && !participants.find(p => p.memberId === memberId)) {
+      const newParticipant: ParticipantEntry = {
+        memberName: memberToAdd.name,
+        score: 0,
+        isExistingMember: true, // Member exists in database (kicked or not)
+        memberId: memberToAdd.id,
+      };
+      setParticipants(prev => [...prev, newParticipant]);
     }
-
-    const score = parseInt(currentScore) || 0;
-    if (score <= 0) {
-      alert("Please enter a valid score greater than 0");
-      return;
-    }
-
-    // Check if this name matches an existing member
-    const existingMember = allMembers.find(m => 
-      m.name.toLowerCase() === currentName.trim().toLowerCase()
-    );
-
-    const newParticipant: ParticipantEntry = {
-      memberName: currentName.trim(),
-      score,
-      isExistingMember: !!existingMember,
-      memberId: existingMember?.id,
-    };
-
-    setParticipants(prev => [...prev, newParticipant]);
-    setCurrentName("");
-    setCurrentScore("");
-    setShowSuggestions(false);
   };
 
-  const handleSelectMember = (member: Member) => {
-    setCurrentName(member.name);
-    setShowSuggestions(false);
-    // Focus on score input after selection
-    setTimeout(() => {
-      document.getElementById('participant-score')?.focus();
-    }, 0);
-  };
-
-  const handleRemoveParticipant = (index: number) => {
-    setParticipants(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      handleAddParticipant();
+      
+      // Calculate search results inline
+      const queryWithoutNumbers = searchQuery.replace(/\s+\d+$/, '').toLowerCase().trim();
+      const results = allMembers.filter((m) => 
+        m.name.toLowerCase().includes(queryWithoutNumbers) &&
+        !participants.find(p => p.memberId === m.id)
+      );
+      
+      if (results.length === 1) {
+        const member = results[0];
+        const isAlreadyEntered = participants.find(p => p.memberId === member.id);
+        
+        // Auto-add member if not already entered
+        if (!isAlreadyEntered) {
+          handleAddMemberToEntry(member.id);
+        }
+        
+        // Check for score in search query
+        const numberMatch = searchQuery.match(/\s+(\d+)$/);
+        if (numberMatch) {
+          const score = numberMatch[1];
+          handleScoreChange(member.id, score);
+          setSearchQuery("");
+        }
+      }
     }
   };
+
+  // Search results for quick entry
+  const searchResults = allMembers.filter((m) => {
+    if (!searchQuery.trim()) return false;
+    const queryWithoutNumbers = searchQuery.replace(/\s+\d+$/, '').toLowerCase().trim();
+    return m.name.toLowerCase().includes(queryWithoutNumbers) &&
+      !participants.find(p => p.memberId === m.id);
+  });
+
+  // Displayed entries sorted by score
+  const displayedEntries = participants.sort((a, b) => {
+    const scoreA = parseInt(entries[a.memberId || ''] || '0');
+    const scoreB = parseInt(entries[b.memberId || ''] || '0');
+    if (scoreA !== scoreB) return scoreB - scoreA;
+    return a.memberName.localeCompare(b.memberName);
+  });
+
+  // Calculate total score
+  const totalScore = Object.values(entries)
+    .filter(score => score && score.trim() !== '')
+    .reduce((sum, score) => sum + (parseInt(score) || 0), 0);
+
+  const membersWithScores = participants.filter(p => {
+    const score = parseInt(entries[p.memberId || ''] || '0');
+    return score > 0;
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -228,12 +256,12 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
         });
       }
 
-      // Create entries for all participants (with scores)
+      // Create entries for all participants (with scores from entries object)
       const participantEntries = participants.map(p => ({
         member_id: p.memberId || newMemberIds[p.memberName],
         castle_rush_id: castleRush.id,
         attendance: true,
-        score: p.score,
+        score: parseInt(entries[p.memberId || ''] || '0'),
         logger_id: logger.id,
       }));
 
@@ -263,6 +291,17 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
 
   if (!isOpen) return null;
 
+  const hasData = participants.length > 0 || Object.keys(entries).length > 0;
+
+  const handleBackdropClick = () => {
+    if (hasData) {
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
+    } else {
+      onClose();
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
@@ -271,9 +310,23 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
     >
       <div
         className="absolute inset-0"
-        onClick={onClose}
+        onClick={handleBackdropClick}
         style={{ background: "rgba(0,0,0,0.4)" }}
       />
+      {showNotification && (
+        <div
+          className="fixed bottom-4 left-4 px-4 py-2 rounded-lg text-sm z-[60]"
+          style={{
+            backgroundColor: "var(--color-surface)",
+            border: "1px solid var(--color-border)",
+            color: "var(--color-foreground)",
+            boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)",
+            animation: "fadeIn 0.3s ease-in-out"
+          }}
+        >
+          Please save or cancel to close this form
+        </div>
+      )}
       <form
         onSubmit={handleSubmit}
         className="relative z-10 w-full max-w-4xl p-6 rounded-lg max-h-[90vh] flex flex-col"
@@ -349,193 +402,192 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
             </div>
           )}
 
-          {/* Add Participant Form */}
-          <div 
-            className="p-4 rounded-lg"
-            style={{
-              backgroundColor: "rgba(128, 128, 128, 0.05)",
-              border: "1px solid var(--color-border)",
-            }}
-          >
-            <h4 className="text-sm font-medium mb-3">Add Participant</h4>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="relative">
-                <label htmlFor="participant-name" className="block text-xs mb-1">Member Name</label>
-                <input
-                  id="participant-name"
-                  type="text"
-                  value={currentName}
-                  onChange={(e) => {
-                    setCurrentName(e.target.value);
-                    setShowSuggestions(true);
-                  }}
-                  onKeyDown={handleKeyDown}
-                  onFocus={() => setShowSuggestions(true)}
-                  onBlur={() => {
-                    // Delay to allow click on suggestion
-                    setTimeout(() => setShowSuggestions(false), 200);
-                  }}
-                  placeholder="Type member name..."
-                  className="w-full px-3 py-2 rounded border text-sm"
-                  style={{
-                    background: "rgba(128, 128, 128, 0.1)",
+          {/* New Search-based Entry System */}
+          <div>
+            <label className="block text-sm mb-2">Members & Scores</label>
+            <div className="mb-3 relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Quick entry: type member name, add space + score, press Enter"
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{
+                  background: "rgba(128, 128, 128, 0.1)",
+                  borderColor: searchResults.length === 1 && searchQuery.match(/\s+\d+$/) 
+                    ? "#22C55E" 
+                    : searchResults.length === 1 
+                      ? "#FBBF24" 
+                      : "var(--color-border)",
+                  color: searchResults.length === 1 && searchQuery.match(/\s+\d+$/) 
+                    ? "#22C55E" 
+                    : searchResults.length === 1 
+                      ? "#FBBF24" 
+                      : "var(--color-foreground)",
+                }}
+              />
+              {searchQuery && searchResults.length > 0 && (
+                <div 
+                  className="border rounded-lg overflow-auto absolute z-50 mt-1 w-full"
+                  style={{ 
                     borderColor: "var(--color-border)",
-                    color: "var(--color-foreground)",
+                    maxHeight: "200px",
+                    backgroundColor: "var(--color-surface)",
+                    boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)"
                   }}
-                />
-                {/* Autocomplete Suggestions */}
-                {showSuggestions && filteredMembers.length > 0 && (
-                  <div 
-                    className="fixed z-50 mt-1 rounded border shadow-lg overflow-hidden"
-                    style={{
-                      backgroundColor: "var(--color-surface)",
-                      borderColor: "var(--color-border)",
-                      maxHeight: "200px",
-                      overflowY: "auto",
-                      width: document.getElementById('participant-name')?.offsetWidth || 'auto',
-                      top: (document.getElementById('participant-name')?.getBoundingClientRect().bottom || 0) + 4,
-                      left: document.getElementById('participant-name')?.getBoundingClientRect().left || 0,
-                    }}
-                  >
-                    {filteredMembers.map(member => (
-                      <button
+                >
+                  {searchResults.map((member) => {
+                    const isAlreadyEntered = participants.find(p => p.memberId === member.id);
+                    const numberMatch = searchQuery.match(/\s+(\d+)$/);
+                    const isReadyToSubmit = searchResults.length === 1 && numberMatch;
+                    
+                    return (
+                      <div
                         key={member.id}
-                        type="button"
-                        onClick={() => handleSelectMember(member)}
-                        className="w-full px-3 py-2 text-left text-sm hover:opacity-80 border-b"
+                        onClick={() => {
+                          if (!isAlreadyEntered) {
+                            handleAddMemberToEntry(member.id);
+                          }
+                          if (numberMatch) {
+                            handleScoreChange(member.id, numberMatch[1]);
+                            setSearchQuery("");
+                          }
+                        }}
+                        className="px-3 py-2 cursor-pointer border-b"
                         style={{
-                          backgroundColor: "var(--color-surface)",
                           borderColor: "var(--color-border)",
-                          color: "var(--color-foreground)",
+                          backgroundColor: isReadyToSubmit ? "rgba(34, 197, 94, 0.1)" : "transparent",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = isReadyToSubmit ? "rgba(34, 197, 94, 0.2)" : "rgba(128, 128, 128, 0.1)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = isReadyToSubmit ? "rgba(34, 197, 94, 0.1)" : "transparent";
                         }}
                       >
                         <div className="flex items-center justify-between">
-                          <span>{member.name}</span>
-                          <span 
-                            className="text-xs px-2 py-0.5 rounded"
-                            style={{
-                              backgroundColor: member.kicked ? "rgba(239, 68, 68, 0.1)" : "rgba(16, 185, 129, 0.1)",
-                              color: member.kicked ? "#ef4444" : "#10b981",
-                            }}
-                          >
-                            {member.kicked ? "Kicked" : "Active"}
+                          <span className="text-sm">
+                            {member.name}
+                            {isAlreadyEntered && (
+                              <span className="ml-1 text-xs" style={{ color: member.kicked ? "#ef4444" : "#22C55E" }}>
+                                ({member.kicked ? "kicked" : "active"})
+                              </span>
+                            )}
+                            {!isAlreadyEntered && member.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
                           </span>
+                          {isReadyToSubmit && (
+                            <span className="text-xs font-semibold" style={{ color: "#22C55E" }}>
+                              Score: {parseInt(numberMatch[1]).toLocaleString()}
+                            </span>
+                          )}
                         </div>
-                        {member.role && (
-                          <div className="text-xs mt-0.5" style={{ color: "var(--color-muted)" }}>
-                            {member.role}
-                          </div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div>
-                <label htmlFor="participant-score" className="block text-xs mb-1">Score</label>
-                <input
-                  id="participant-score"
-                  type="number"
-                  value={currentScore}
-                  onChange={(e) => setCurrentScore(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  onWheel={(e) => e.currentTarget.blur()}
-                  placeholder="Enter score..."
-                  className="w-full px-3 py-2 rounded border text-sm"
-                  min="0"
-                  style={{
-                    background: "rgba(128, 128, 128, 0.1)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-foreground)",
-                  }}
-                />
-              </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={handleAddParticipant}
-              className="w-full mt-3 px-3 py-2 rounded text-sm flex items-center justify-center gap-2"
-              style={{
-                backgroundColor: "var(--color-primary)",
-                color: "white",
-              }}
-            >
-              <FaPlus size={12} />
-              Add Participant
-            </button>
-          </div>
 
-          {/* Participants List */}
-          {participants.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium mb-2">
-                Participants ({participants.length})
-              </h4>
-              <div 
-                className="border rounded-lg overflow-hidden"
-                style={{ borderColor: "var(--color-border)" }}
-              >
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr 
-                      className="border-b"
-                      style={{ 
-                        borderColor: "var(--color-border)",
-                        backgroundColor: "rgba(128, 128, 128, 0.05)",
-                      }}
-                    >
-                      <th className="text-left px-3 py-2 text-xs">Member</th>
-                      <th className="text-center px-3 py-2 text-xs">Status</th>
-                      <th className="text-right px-3 py-2 text-xs">Score</th>
-                      <th className="text-center px-3 py-2 text-xs" style={{ width: "80px" }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {participants.map((p, index) => (
-                      <tr 
-                        key={index}
-                        className="border-b"
-                        style={{ borderColor: "var(--color-border)" }}
-                      >
-                        <td className="px-3 py-2">{p.memberName}</td>
-                        <td className="px-3 py-2 text-center">
-                          <span 
-                            className="text-xs px-2 py-0.5 rounded"
-                            style={{
-                              backgroundColor: p.isExistingMember ? "rgba(16, 185, 129, 0.1)" : "rgba(245, 158, 11, 0.1)",
-                              color: p.isExistingMember ? "#10b981" : "#f59e0b",
-                            }}
-                          >
-                            {p.isExistingMember ? "Current" : "Historical"}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono">
-                          {p.score.toLocaleString()}
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveParticipant(index)}
-                            className="text-xs px-2 py-1 rounded hover:opacity-80"
-                            style={{
-                              backgroundColor: "rgba(239, 68, 68, 0.8)",
-                              color: "white",
-                            }}
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {participants.length === 0 ? (
+              <div className="text-sm p-6 rounded border text-center" style={{ 
+                color: "var(--color-muted)",
+                borderColor: "var(--color-border)",
+                backgroundColor: "rgba(128, 128, 128, 0.05)"
+              }}>
+                <div className="mb-2">No members entered yet</div>
+                <div className="text-xs">Use the search bar above to quickly add members with scores</div>
               </div>
-              <p className="text-xs mt-2" style={{ color: "var(--color-muted)" }}>
-                Note: Only listed participants will be included in this historical entry.
-                Historical members will be added to the database and marked as "kicked".
-              </p>
-            </div>
-          )}
+            ) : (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium">
+                    Entered Members ({participants.length})
+                  </div>
+                  {totalScore > 0 && (
+                    <div className="text-sm font-mono font-semibold" style={{ color: "var(--color-primary)" }}>
+                      Total: {totalScore.toLocaleString()} ({membersWithScores.length} scored)
+                    </div>
+                  )}
+                </div>
+                <div 
+                  className="border rounded-lg overflow-auto"
+                  style={{ 
+                    borderColor: "var(--color-border)",
+                    maxHeight: "350px"
+                  }}
+                >
+                  <table className="w-full">
+                    <thead className="sticky top-0">
+                      <tr 
+                        className="border-b"
+                        style={{ 
+                          borderColor: "var(--color-border)",
+                          backgroundColor: "var(--color-surface)"
+                        }}
+                      >
+                        <th className="text-left px-3 py-2 text-xs font-medium">Name</th>
+                        <th className="text-right px-3 py-2 text-xs font-medium" style={{ width: "120px" }}>Score</th>
+                        <th className="text-center px-3 py-2 text-xs font-medium" style={{ width: "70px" }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedEntries.map((participant) => {
+                        const hasScore = entries[participant.memberId || ''] && parseInt(entries[participant.memberId || '']) > 0;
+                        const member = allMembers.find(m => m.id === participant.memberId);
+                        
+                        return (
+                          <tr 
+                            key={participant.memberId}
+                            className="border-b"
+                            style={{ 
+                              borderColor: "var(--color-border)",
+                              opacity: member?.kicked ? 0.6 : 1,
+                              backgroundColor: hasScore ? "rgba(34, 197, 94, 0.05)" : "transparent"
+                            }}
+                          >
+                            <td className="px-3 py-2 text-sm">
+                              {participant.memberName}
+                              {member?.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
+                            </td>
+                            <td className="px-3 py-2" style={{ width: "120px" }}>
+                              <input
+                                type="number"
+                                value={entries[participant.memberId || ''] || ""}
+                                onChange={(e) => handleScoreChange(participant.memberId || '', e.target.value)}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                className="w-full px-2 py-1 rounded border text-right text-sm"
+                                placeholder="0"
+                                min="0"
+                                style={{
+                                  background: "rgba(128, 128, 128, 0.1)",
+                                  borderColor: "var(--color-border)",
+                                  color: "var(--color-foreground)",
+                                }}
+                              />  
+                            </td>
+                            <td className="px-3 py-2 text-center" style={{ width: "70px" }}>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteEntry(participant.memberId || '')}
+                                className="px-2 py-1 rounded text-xs"
+                                style={{
+                                  backgroundColor: "#ef4444",
+                                  color: "white",
+                                }}
+                              >
+                                Del
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
           </div>
         </div>
 

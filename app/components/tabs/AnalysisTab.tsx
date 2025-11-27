@@ -32,6 +32,7 @@ interface MemberStats {
   lowestScore: number;
   consistency: number; // score variance
   riskScore: number;
+  bestCastleScores?: { [castle: string]: number }; // Best score per castle
 }
 
 interface GuildMetrics {
@@ -55,6 +56,28 @@ export default function AnalysisTab() {
 
   useEffect(() => {
     loadAnalysis();
+
+    // Set up real-time subscriptions
+    const membersChannel = supabase
+      .channel('analysis-members-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => loadAnalysis())
+      .subscribe();
+
+    const crEntryChannel = supabase
+      .channel('analysis-cr-entry-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'castle_rush_entry' }, () => loadAnalysis())
+      .subscribe();
+
+    const aeEntryChannel = supabase
+      .channel('analysis-ae-entry-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'advent_expedition_entry' }, () => loadAnalysis())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(membersChannel);
+      supabase.removeChannel(crEntryChannel);
+      supabase.removeChannel(aeEntryChannel);
+    };
   }, []);
 
   async function loadAnalysis() {
@@ -63,7 +86,7 @@ export default function AnalysisTab() {
       // Fetch all data in parallel
       const [membersRes, crRes, aeRes] = await Promise.all([
         supabase.from('members').select('id, name, role, kicked, created_at').order('created_at', { ascending: false }),
-        supabase.from('castle_rush_entry').select('member_id, attendance, score, castle_rush!inner(date)'),
+        supabase.from('castle_rush_entry').select('member_id, attendance, score, castle_rush!inner(date, castle)'),
         supabase.from('advent_expedition_entry').select('member_id, attendance, total_score, date')
       ]);
       
@@ -79,6 +102,7 @@ export default function AnalysisTab() {
         attendance: e.attendance,
         score: e.score,
         date: e.castle_rush.date,
+        castle: e.castle_rush.castle,
         type: 'castle_rush'
       }));
 
@@ -211,6 +235,16 @@ export default function AnalysisTab() {
             }
           });
 
+          // Calculate best score per castle
+          const bestCastleScores: { [castle: string]: number } = {};
+          crMemberEntries.forEach((e: any) => {
+            if (e.castle && e.score) {
+              if (!bestCastleScores[e.castle] || e.score > bestCastleScores[e.castle]) {
+                bestCastleScores[e.castle] = e.score;
+              }
+            }
+          });
+
           return {
             memberId: m.id,
             memberName: m.name,
@@ -231,6 +265,7 @@ export default function AnalysisTab() {
             lowestScore,
             consistency,
             riskScore,
+            bestCastleScores,
           };
         });
 
@@ -578,19 +613,19 @@ export default function AnalysisTab() {
                   guildMetrics.atRiskMembers.map((member: any) => (
                     <div
                       key={member.memberId}
-                      className="flex items-center justify-between p-3 rounded"
+                      className="p-3 rounded"
                       style={{ backgroundColor: "rgba(239, 68, 68, 0.05)" }}
                     >
-                      <div>
-                        <div className="font-medium" style={{ color: "var(--color-foreground)" }}>
-                          {member.memberName}
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <div className="font-medium" style={{ color: "var(--color-foreground)" }}>
+                            {member.memberName}
+                          </div>
+                          <div className="text-xs" style={{ color: "var(--color-muted)" }}>
+                            {member.totalEntries} entries • {member.attendanceRate.toFixed(0)}% attendance
+                            {member.daysSinceLastEntry !== null && member.daysSinceLastEntry >= 3 && ` • Inactive ${member.daysSinceLastEntry}d`}
+                          </div>
                         </div>
-                        <div className="text-xs" style={{ color: "var(--color-muted)" }}>
-                          {member.totalEntries} entries • {member.attendanceRate.toFixed(0)}% attendance
-                          {member.daysSinceLastEntry !== null && member.daysSinceLastEntry >= 3 && ` • Inactive ${member.daysSinceLastEntry}d`}
-                        </div>
-                      </div>
-                      <div className="text-right">
                         <div
                           className="text-sm font-bold px-2 py-1 rounded"
                           style={{ backgroundColor: "#ef4444", color: "white" }}
@@ -598,107 +633,28 @@ export default function AnalysisTab() {
                           Risk: {member.riskScore.toFixed(0)}
                         </div>
                       </div>
+                      {member.bestCastleScores && Object.keys(member.bestCastleScores).length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {Object.entries(member.bestCastleScores).map(([castle, score]: [string, any]) => (
+                            <div
+                              key={castle}
+                              className="px-2 py-1 rounded text-xs"
+                              style={{
+                                backgroundColor: "rgba(139, 92, 246, 0.1)",
+                                color: "#8b5cf6",
+                                border: "1px solid rgba(139, 92, 246, 0.2)"
+                              }}
+                            >
+                              <span className="font-semibold">{castle}:</span> {score.toLocaleString()}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))
                 ) : (
                   <div className="text-center py-4 text-sm" style={{ color: "var(--color-muted)" }}>
                     All members performing well! 🎉
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Consistent Performers */}
-            <div
-              className="p-5 rounded-lg"
-              style={{
-                backgroundColor: "var(--color-surface)",
-                border: "1px solid var(--color-border)",
-              }}
-            >
-              <div className="flex items-center gap-2 mb-4">
-                <FaCheckCircle size={18} style={{ color: "#10b981" }} />
-                <h3 className="text-lg font-bold" style={{ color: "var(--color-foreground)" }}>
-                  Most Consistent
-                </h3>
-              </div>
-              <div className="space-y-3">
-                {guildMetrics.consistentPerformers.length > 0 ? (
-                  guildMetrics.consistentPerformers.map((member) => (
-                    <div
-                      key={member.memberId}
-                      className="flex items-center justify-between p-3 rounded"
-                      style={{ backgroundColor: "rgba(16, 185, 129, 0.05)" }}
-                    >
-                      <div>
-                        <div className="font-medium" style={{ color: "var(--color-foreground)" }}>
-                          {member.memberName}
-                        </div>
-                        <div className="text-xs" style={{ color: "var(--color-muted)" }}>
-                          {member.totalEntries} entries • {member.attendanceRate.toFixed(0)}% attend
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-bold" style={{ color: "#10b981" }}>
-                          {member.consistency.toFixed(0)}
-                        </div>
-                        <div className="text-xs" style={{ color: "var(--color-muted)" }}>
-                          consistency
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-4 text-sm" style={{ color: "var(--color-muted)" }}>
-                    Need more data to identify consistent performers
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Recently Inactive */}
-            <div
-              className="p-5 rounded-lg"
-              style={{
-                backgroundColor: "var(--color-surface)",
-                border: "1px solid var(--color-border)",
-              }}
-            >
-              <div className="flex items-center gap-2 mb-4">
-                <FaTimesCircle size={18} style={{ color: "#f59e0b" }} />
-                <h3 className="text-lg font-bold" style={{ color: "var(--color-foreground)" }}>
-                  Recently Inactive
-                </h3>
-              </div>
-              <div className="space-y-3">
-                {guildMetrics.recentInactiveMembers.length > 0 ? (
-                  guildMetrics.recentInactiveMembers.map((member) => (
-                    <div
-                      key={member.memberId}
-                      className="flex items-center justify-between p-3 rounded"
-                      style={{ backgroundColor: "rgba(245, 158, 11, 0.05)" }}
-                    >
-                      <div>
-                        <div className="font-medium" style={{ color: "var(--color-foreground)" }}>
-                          {member.memberName}
-                        </div>
-                        <div className="text-xs" style={{ color: "var(--color-muted)" }}>
-                          {member.totalEntries} total entries
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-bold" style={{ color: "#f59e0b" }}>
-                          {member.daysSinceLastEntry}d
-                        </div>
-                        <div className="text-xs" style={{ color: "var(--color-muted)" }}>
-                          since active
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-4 text-sm" style={{ color: "var(--color-muted)" }}>
-                    All members are active! 🔥
                   </div>
                 )}
               </div>

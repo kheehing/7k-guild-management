@@ -1,5 +1,6 @@
-import { FaTimes } from "react-icons/fa";
+import { FaTimes, FaPlus } from "react-icons/fa";
 import { useState, useEffect, useCallback, useMemo } from "react";
+import AddMemberForm from "./AddMemberForm";
 import { supabase } from "../../lib/supabaseClient";
 
 interface Member {
@@ -61,17 +62,19 @@ const CASTLE_SCHEDULE: Record<number, CastleInfo> = {
 };
 
 export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryId }: CastleRushEntryModalProps) {
+  const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState("");
   const [castleInfo, setCastleInfo] = useState<CastleInfo | null>(null);
   const [entries, setEntries] = useState<Record<string, string>>({});
+  const [showAllMembers, setShowAllMembers] = useState(false);
+  const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [existingEntryId, setExistingEntryId] = useState<string | null>(null);
   const [allMembers, setAllMembers] = useState<Member[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
   const [enteredMembers, setEnteredMembers] = useState<Member[]>([]);
-  const [showNotification, setShowNotification] = useState(false);
 
   const loadExistingEntry = useCallback(async (entryId: string) => {
     setLoading(true);
@@ -218,6 +221,7 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
       
       // Store all members for search functionality immediately
       setAllMembers(memberData);
+      setMembers(memberData);
       setLoading(false); // Set loading to false immediately after getting members
       
       // Load performance data in background without blocking UI
@@ -278,6 +282,8 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
                         
                         return nameA.localeCompare(nameB);
                       });
+                      
+                      setMembers(sortedMembers);
                     }
                   });
               }
@@ -327,7 +333,7 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
       // Calculate search results inline
       const queryWithoutNumbers = searchQuery.replace(/\s+\d+$/, '').toLowerCase().trim();
       const results = allMembers.filter((m) => 
-        (isEditMode || !m.kicked) && 
+        (isEditMode || showAllMembers || !m.kicked) && 
         m.name.toLowerCase().includes(queryWithoutNumbers)
       );
       
@@ -364,6 +370,10 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
     }
   };
 
+  const handleMemberAdded = useCallback((newMember: Member) => {
+    setMembers((prev) => [newMember, ...prev]);
+  }, []);
+
   // Search results for quick entry - only shows when searching
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -371,13 +381,13 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
     const queryWithoutNumbers = searchQuery.replace(/\s+\d+$/, '').toLowerCase().trim();
     const filtered = allMembers.filter((m) => 
       // In edit mode, always show all members (including kicked)
-      // In add mode, only show active members
-      (isEditMode || !m.kicked) && 
+      // In add mode, respect the showAllMembers toggle
+      (isEditMode || showAllMembers || !m.kicked) && 
       m.name.toLowerCase().includes(queryWithoutNumbers)
     );
     
     return filtered;
-  }, [allMembers, searchQuery, isEditMode]);
+  }, [allMembers, searchQuery, showAllMembers, isEditMode]);
 
   // Entered members sorted by score
   const displayedEntries = useMemo(() => {
@@ -414,17 +424,6 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
   }, [entries]);
 
   if (!isOpen) return null;
-
-  const hasData = enteredMembers.length > 0 || Object.keys(entries).length > 0;
-
-  const handleBackdropClick = () => {
-    if (hasData) {
-      setShowNotification(true);
-      setTimeout(() => setShowNotification(false), 3000);
-    } else {
-      onClose();
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -553,23 +552,9 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
     >
       <div
         className="absolute inset-0"
-        onClick={handleBackdropClick}
+        onClick={onClose}
         style={{ background: "rgba(0,0,0,0.4)" }}
       />
-      {showNotification && (
-        <div
-          className="fixed bottom-4 left-4 px-4 py-2 rounded-lg text-sm z-[60]"
-          style={{
-            backgroundColor: "var(--color-surface)",
-            border: "1px solid var(--color-border)",
-            color: "var(--color-foreground)",
-            boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)",
-            animation: "fadeIn 0.3s ease-in-out"
-          }}
-        >
-          Please save or cancel to close this form
-        </div>
-      )}
       <form
         onSubmit={handleSubmit}
         onKeyDown={handleFormKeyDown}
@@ -645,12 +630,37 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
           )}
 
           <div>
-            <div className="mb-2">
+            <div className="flex items-center justify-between mb-2">
               <label className="block text-sm">Members & Scores</label>
+              {!isEditMode && (
+                <div className="flex items-center gap-2 pr-4">
+                  <label className="flex items-center gap-2 text-xs pr-4" style={{ color: "var(--color-muted)" }}>
+                    <input
+                      type="checkbox"
+                      checked={showAllMembers}
+                      onChange={(e) => setShowAllMembers(e.target.checked)}
+                      className="rounded"
+                    />
+                    Show kicked members
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddMemberOpen(true)}
+                    className="px-2 py-1 rounded text-xs flex items-center gap-1"
+                    style={{
+                      backgroundColor: "var(--color-primary)",
+                      color: "white",
+                    }}
+                  >
+                    <FaPlus size={10} />
+                    Add Member
+                  </button>
+                </div>
+              )}
             </div>
             
             {/* Search Bar */}
-            <div className="mb-3 relative">
+            <div className="mb-3">
               <input
                 type="text"
                 value={searchQuery}
@@ -664,6 +674,39 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
                   color: searchResults.length === 1 && searchQuery.match(/\s+\d+$/) ? "#22C55E" : "var(--color-foreground)",
                 }}
               />
+              {searchResults.length === 1 && searchQuery && (
+                (() => {
+                  const member = searchResults[0];
+                  const isAlreadyEntered = enteredMembers.find(m => m.id === member.id);
+                  const hasScoreInQuery = searchQuery.match(/\s+\d+$/);
+                  
+                  if (hasScoreInQuery) {
+                    const action = isAlreadyEntered ? "update score" : "add and set score";
+                    return (
+                      <div className="text-xs mt-1 px-1" style={{ color: "#22C55E", fontWeight: "600" }}>
+                        ✓ Ready! Press Enter to {action} {parseInt(searchQuery.match(/\s+(\d+)$/)?.[1] || '0').toLocaleString()} for {member.name}
+                      </div>
+                    );
+                  } else if (searchQuery.includes(' ')) {
+                    return (
+                      <div className="text-xs mt-1 px-1" style={{ color: "#FBBF24", fontWeight: "500" }}>
+                        Preparing for {member.name}{isAlreadyEntered ? " (entered)" : " (new)"}... (add score)
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="text-xs mt-1 px-1" style={{ color: "#A78BFA", fontWeight: "500" }}>
+                        Preparing for {member.name}{isAlreadyEntered ? " (entered)" : " (new)"}... (add space + score)
+                      </div>
+                    );
+                  }
+                })()
+              )}
+              {searchResults.length === 0 && searchQuery && !searchQuery.match(/\s+\d+$/) && (
+                <div className="text-xs mt-1 px-1" style={{ color: "var(--color-muted)" }}>
+                  No members found matching "{searchQuery.replace(/\s+\d+$/, '')}"
+                </div>
+              )}
             </div>
 
             {loading ? (
@@ -671,17 +714,16 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
                 Loading members...
               </div>
             ) : (
-              <div className="space-y-3 relative">
+              <div className="space-y-3">
                 {/* Search results dropdown - only show when searching */}
                 {searchQuery && searchResults.length > 0 && (
                   <div 
-                    className="border rounded-lg overflow-auto absolute z-50 w-full"
+                    className="border rounded-lg overflow-auto absolute z-10 mt-1 w-full"
                     style={{ 
                       borderColor: "var(--color-border)",
                       maxHeight: "200px",
                       backgroundColor: "var(--color-surface)",
-                      boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)",
-                      top: "-12px"
+                      boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)"
                     }}
                   >
                     {searchResults.map((member) => {
@@ -887,6 +929,12 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
           </button>
         </div>
       </form>
+
+      <AddMemberForm
+        isOpen={isAddMemberOpen}
+        onClose={() => setIsAddMemberOpen(false)}
+        onMemberAdded={handleMemberAdded}
+      />
     </div>
   );
 }

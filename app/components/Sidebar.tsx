@@ -56,8 +56,18 @@ export default function Sidebar({ children }: SidebarProps) {
     }
 
     loadMembers();
+
+    // Set up real-time subscription
+    const membersChannel = supabase
+      .channel('sidebar-members-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'members' }, () => {
+        if (!cancelled) loadMembers();
+      })
+      .subscribe();
+
     return () => {
       cancelled = true;
+      supabase.removeChannel(membersChannel);
     };
   }, []);
 
@@ -65,35 +75,19 @@ export default function Sidebar({ children }: SidebarProps) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    // Filter out kicked members (kicked === true), keep members where kicked is false or null/undefined
-    const activeMembers = members.filter((m) => m.kicked !== true);
+    
+    // Filter out kicked members
+    const activeMembers = members.filter((m) => !m.kicked);
     
     // Apply search filter
     const searchFiltered = !q 
       ? activeMembers 
       : activeMembers.filter((m) => (m.name ?? "").toLowerCase().includes(q));
     
-    // Sort: non-Members first, then by role alphabetically, then by name alphabetically
+    // Sort by name alphabetically only
     return searchFiltered.sort((a, b) => {
-      const roleA = (a.role ?? "Member").toLowerCase();
-      const roleB = (b.role ?? "Member").toLowerCase();
       const nameA = (a.name ?? "").toLowerCase();
       const nameB = (b.name ?? "").toLowerCase();
-      
-      // Check if roles are "member"
-      const isAMember = roleA === "member";
-      const isBMember = roleB === "member";
-      
-      // Non-members come first
-      if (isAMember && !isBMember) return 1;
-      if (!isAMember && isBMember) return -1;
-      
-      // If both are members or both are non-members, sort by role alphabetically
-      if (roleA !== roleB) {
-        return roleA.localeCompare(roleB);
-      }
-      
-      // If roles are the same, sort by name alphabetically
       return nameA.localeCompare(nameB);
     });
   }, [members, search]);
@@ -243,12 +237,6 @@ export default function Sidebar({ children }: SidebarProps) {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{m.name}</div>
-                    <div
-                      className="text-xs truncate"
-                      style={{ color: "var(--color-muted)" }}
-                    >
-                      {m.role ?? "Member"}
-                    </div>
                   </div>
                 </button>
                 <button
