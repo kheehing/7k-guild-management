@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.83.0",
+    "@vercel/analytics": "^1.5.0",
     "fs": "^0.0.1-security",
     "next": "16.0.3",
     "react": "19.2.0",

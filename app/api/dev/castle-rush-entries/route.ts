@@ -35,7 +35,8 @@ export async function GET(request: Request) {
         castle_rush_id,
         created_at,
         members (
-          name
+          name,
+          kicked
         )
       `)
       .eq('castle_rush_id', castleRush.id)
@@ -48,6 +49,7 @@ export async function GET(request: Request) {
       id: entry.id,
       member_id: entry.member_id,
       member_name: entry.members?.name,
+      kicked: entry.members?.kicked ?? false,
       score: entry.score,
       attendance: entry.attendance,
       castle_rush_id: entry.castle_rush_id,

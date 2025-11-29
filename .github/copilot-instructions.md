@@ -16,7 +16,9 @@ This is a **Next.js 15 App Router** application for managing 7K game guild membe
 
 **Key tables**:
 - `logger` — audit trail (id, logged_by, created_at)
-- `members` — guild members (id, name, role, kicked, logger_id, created_at)
+- `members` — guild members (id, name, role, kicked, kick_date, logger_id, created_at)
+  - `kicked` (boolean, default false): member status
+  - `kick_date` (date, nullable): date member was kicked
   - Foreign key to logger for audit tracking
 - `castle_rush` — event records (id, castle, date, logger_id, created_at)
   - Foreign key to logger
@@ -27,7 +29,7 @@ This is a **Next.js 15 App Router** application for managing 7K game guild membe
 - `advent_expedition_entry` — expedition participation (id, advent_expedition_id, member_id, date, boss, attendance, total_score, logger_id, created_at)
   - Foreign keys to advent_expedition, members, and logger
 
-**Critical pattern**: Always fetch via API routes (`/api/members`, `/api/castle-rush-entry`) from client components. Direct Supabase queries are only in API routes or tabs using `supabase.from()` with proper joins.
+**Critical pattern**: Always fetch via API routes (`/api/members`, `/api/castle-rush-entry`, `/api/dev/castle-rush-entries`) from client components. Direct Supabase queries are only in API routes or tabs using `supabase.from()` with proper joins. For member status, always join and select `kicked` and `kick_date` fields from `members`.
 
 ## Theme System (CSS Variables)
 
@@ -80,6 +82,7 @@ SUPABASE_SECRET_KEY=eyJhbGc...              # Service role JWT (long token, not 
   - `entries`: Score mapping `{ memberId: "score" }`
   - `searchQuery`: Current search text
   - `isEditMode`: Boolean flag for edit vs. add mode
+  - For member status, use `kicked` and `kick_date` from `members` table. Display kicked status in all edit/admin views.
 
 **Data fetching**:
 ```tsx
@@ -88,6 +91,23 @@ const { data, error } = await supabase.from('members').select('*');
 
 // In API routes:
 const { data, error } = await supabaseAdmin.from('members').select('*');
+
+// For castle rush entry admin/dev API:
+const { data, error } = await supabaseAdmin
+  .from('castle_rush_entry')
+  .select(`
+    id,
+    member_id,
+    score,
+    attendance,
+    castle_rush_id,
+    created_at,
+    members (
+      name,
+      kicked,
+      kick_date
+    )
+  `)
 ```
 
 **Styling**:
@@ -103,7 +123,7 @@ const { data, error } = await supabaseAdmin.from('members').select('*');
 - **Weekly activity**: Count attended entries per day for last 7 days
 - **Last active**: Days since most recent entry, show "Up to date" if ≤1 day
 
-**Filtering**: Exclude `kicked: true` members from analysis tables.
+**Filtering**: Exclude `kicked: true` members from analysis tables. For admin/dev views, display `kicked` and `kick_date` status for each member.
 
 ## Common Patterns
 

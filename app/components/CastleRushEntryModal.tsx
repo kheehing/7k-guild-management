@@ -1,4 +1,5 @@
 import { FaTimes } from "react-icons/fa";
+import Notification from "./Notification";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../lib/supabaseClient";
 
@@ -72,6 +73,7 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
   const [isEditMode, setIsEditMode] = useState(false);
   const [enteredMembers, setEnteredMembers] = useState<Member[]>([]);
   const [showNotification, setShowNotification] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState<string>("");
 
   const loadExistingEntry = useCallback(async (entryId: string) => {
     setLoading(true);
@@ -419,6 +421,7 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
 
   const handleBackdropClick = () => {
     if (hasData) {
+      setNotificationMessage("Please save or cancel to close this form");
       setShowNotification(true);
       setTimeout(() => setShowNotification(false), 3000);
     } else {
@@ -428,26 +431,27 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!selectedDate) {
-      alert("Please select a date");
+      setNotificationMessage("Please select a date");
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
       return;
     }
-
     if (!castleInfo) {
-      alert("Castle information not available");
+      setNotificationMessage("Castle information not available");
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
       return;
     }
-
     // Prevent submitting if all scores are empty/0
     const hasAnyScore = Object.values(entries).some(score => score && parseInt(score) > 0);
     if (!hasAnyScore) {
-      alert("Please enter at least one score before submitting");
+      setNotificationMessage("Please enter at least one score before submitting");
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
       return;
     }
-
     setSubmitting(true);
-
     try {
       // Final check: ensure no duplicate entry exists for this date (when creating new)
       if (!editEntryId && !existingEntryId) {
@@ -456,25 +460,23 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
           .select('id')
           .eq('date', selectedDate)
           .single();
-
         if (duplicateCheck) {
-          alert("An entry already exists for this date. Please refresh the page and try editing the existing entry instead.");
+          setNotificationMessage("An entry already exists for this date. Please refresh the page and try editing the existing entry instead.");
+          setShowNotification(true);
+          setTimeout(() => setShowNotification(false), 4000);
           setSubmitting(false);
           return;
         }
       }
-
       // Create entries data for entered members only
       const entriesData = enteredMembers.map((member) => {
         const score = entries[member.id] ? parseInt(entries[member.id]) : 0;
-        
         return {
           member_id: member.id,
           attendance: score > 0,
           score: score,
         };
       });
-
       if (editEntryId || existingEntryId) {
         // Update existing entry
         const entryToUpdate = editEntryId || existingEntryId;
@@ -482,16 +484,13 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
           .from('castle_rush_entry')
           .delete()
           .eq('castle_rush_id', entryToUpdate);
-
         if (deleteError) throw deleteError;
-
         // Get the castle rush to get its logger_id
         const { data: castleRush } = await supabase
           .from('castle_rush')
           .select('logger_id')
           .eq('id', entryToUpdate)
           .single();
-
         // Insert updated entries
         const entryRecords = entriesData.map((entry: any) => ({
           member_id: entry.member_id,
@@ -500,14 +499,22 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
           score: entry.score,
           logger_id: castleRush?.logger_id,
         }));
-
         const { error: insertError } = await supabase
           .from('castle_rush_entry')
           .insert(entryRecords);
-
         if (insertError) throw insertError;
-
-        alert("Castle rush entries updated successfully!");
+        setNotificationMessage("Castle rush entries updated successfully!");
+        setShowNotification(true);
+        setTimeout(() => {
+          setShowNotification(false);
+          // Only close after notification fades
+          setEntries({});
+          setSelectedDate("");
+          setCastleInfo(null);
+          setSearchQuery("");
+          setExistingEntryId(null);
+          onClose();
+        }, 4000);
       } else {
         // Submit to API for new entry
         const response = await fetch('/api/castle-rush', {
@@ -520,26 +527,27 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
             loggedBy: 'system', // You can change this to the actual user name
           }),
         });
-
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || 'Failed to submit castle rush');
         }
-
         await response.json();
-        
-        alert("Castle rush entries saved successfully!");
+        setNotificationMessage("Castle rush entries saved successfully!");
+        setShowNotification(true);
+        setTimeout(() => {
+          setShowNotification(false);
+          setEntries({});
+          setSelectedDate("");
+          setCastleInfo(null);
+          setSearchQuery("");
+          setExistingEntryId(null);
+          onClose();
+        }, 4000);
       }
-      
-      // Reset form
-      setEntries({});
-      setSelectedDate("");
-      setCastleInfo(null);
-      setSearchQuery("");
-      setExistingEntryId(null);
-      onClose();
     } catch (error) {
-      alert(`Failed to save castle rush entries: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setNotificationMessage(`Failed to save castle rush entries: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 4000);
     } finally {
       setSubmitting(false);
     }
@@ -556,20 +564,11 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
         onClick={handleBackdropClick}
         style={{ background: "rgba(0,0,0,0.4)" }}
       />
-      {showNotification && (
-        <div
-          className="fixed bottom-4 left-4 px-4 py-2 rounded-lg text-sm z-[60]"
-          style={{
-            backgroundColor: "var(--color-surface)",
-            border: "1px solid var(--color-border)",
-            color: "var(--color-foreground)",
-            boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)",
-            animation: "fadeIn 0.3s ease-in-out"
-          }}
-        >
-          Please save or cancel to close this form
-        </div>
-      )}
+      <Notification
+        message={notificationMessage}
+        show={showNotification}
+        onClose={() => setShowNotification(false)}
+      />
       <form
         onSubmit={handleSubmit}
         onKeyDown={handleFormKeyDown}
