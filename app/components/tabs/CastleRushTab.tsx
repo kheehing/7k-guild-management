@@ -104,8 +104,12 @@ export default function CastleRushTab() {
     setLoading(true);
     try {
       // Get castle rush entries for current month only
-      const firstDayStr = new Date(year, month, 1).toISOString().split('T')[0];
-      const lastDayStr = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      // Format dates without timezone conversion
+      const yearStr = year.toString();
+      const monthStr = (month + 1).toString().padStart(2, '0');
+      const firstDayStr = `${yearStr}-${monthStr}-01`;
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      const lastDayStr = `${yearStr}-${monthStr}-${lastDay.toString().padStart(2, '0')}`;
       
       const { data: castleRushes, error } = await supabase
         .from('castle_rush')
