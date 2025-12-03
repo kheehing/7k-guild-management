@@ -146,13 +146,13 @@ export default function MemberSearchBar({
                 className="px-3 py-2 cursor-pointer border-b"
                 style={{
                   borderColor: "var(--color-border)",
-                  backgroundColor: isItemReadyToSubmit ? "rgba(34, 197, 94, 0.1)" : isItemSingleResult ? "rgba(251, 191, 36, 0.1)" : "transparent",
+                  backgroundColor: isItemReadyToSubmit ? "rgba(34, 197, 94, 0.1)" : "rgba(251, 191, 36, 0.1)",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = isItemReadyToSubmit ? "rgba(34, 197, 94, 0.2)" : isItemSingleResult ? "rgba(251, 191, 36, 0.2)" : "rgba(128, 128, 128, 0.1)";
+                  e.currentTarget.style.backgroundColor = isItemReadyToSubmit ? "rgba(34, 197, 94, 0.2)" : "rgba(251, 191, 36, 0.2)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = isItemReadyToSubmit ? "rgba(34, 197, 94, 0.1)" : isItemSingleResult ? "rgba(251, 191, 36, 0.1)" : "transparent";
+                  e.currentTarget.style.backgroundColor = isItemReadyToSubmit ? "rgba(34, 197, 94, 0.1)" : "rgba(251, 191, 36, 0.1)";
                 }}
               >
                 <div className="flex items-center justify-between">
