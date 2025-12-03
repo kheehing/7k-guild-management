@@ -1,7 +1,8 @@
 import { FaTimes, FaPlus } from "react-icons/fa";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import AddMemberForm from "./AddMemberForm";
 import { supabase } from "../../lib/supabaseClient";
+import MemberSearchBar from "./MemberSearchBar";
 
 interface Member {
   id: string;
@@ -23,6 +24,7 @@ export default function AdventEntryModal({ isOpen, onClose, editEntryId }: Adven
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState("");
   const [entries, setEntries] = useState<Record<string, Record<string, string>>>({});
+  const [entryCounts, setEntryCounts] = useState<Record<string, Record<string, string>>>({});
   const [showAllMembers, setShowAllMembers] = useState(false);
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -56,22 +58,30 @@ export default function AdventEntryModal({ isOpen, onClose, editEntryId }: Adven
       // Fetch existing entry data
       const { data: existingEntries, error: entriesError } = await supabase
         .from('advent_expedition_entry')
-        .select('member_id, boss, total_score, attendance')
+        .select('member_id, boss, total_score, attendance, entry_count')
         .eq('advent_expedition_id', entryId);
 
       if (entriesError) throw entriesError;
 
       // Map existing scores to entries state (member_id -> boss -> score)
       const entriesMap: Record<string, Record<string, string>> = {};
+      const entryCountsMap: Record<string, Record<string, string>> = {};
       existingEntries?.forEach((entry: any) => {
         if (!entriesMap[entry.member_id]) {
           entriesMap[entry.member_id] = {};
         }
+        if (!entryCountsMap[entry.member_id]) {
+          entryCountsMap[entry.member_id] = {};
+        }
         if (entry.total_score > 0) {
           entriesMap[entry.member_id][entry.boss] = entry.total_score.toString();
         }
+        if (entry.entry_count > 0) {
+          entryCountsMap[entry.member_id][entry.boss] = entry.entry_count.toString();
+        }
       });
       setEntries(entriesMap);
+      setEntryCounts(entryCountsMap);
 
       // Sort members
       const sortedMembers = memberData.sort((a: Member, b: Member) => {
@@ -109,6 +119,7 @@ export default function AdventEntryModal({ isOpen, onClose, editEntryId }: Adven
         setExistingEntryId(null);
         setSelectedDate("");
         setEntries({});
+        setEntryCounts({});
         setSearchQuery("");
         setActiveBoss(BOSSES[0]);
         setExcludedEntries(new Set());
@@ -193,20 +204,30 @@ export default function AdventEntryModal({ isOpen, onClose, editEntryId }: Adven
     }));
   };
 
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (displayedMembers.length === 1) {
-        const member = displayedMembers[0];
-        const numberMatch = searchQuery.match(/\s+(\d+)$/);
-        if (numberMatch) {
-          const score = numberMatch[1];
-          handleScoreChange(member.id, activeBoss, score);
-          setSearchQuery("");
-        }
+  const handleEntryCountChange = (memberId: string, boss: string, count: string) => {
+    setEntryCounts(prev => ({
+      ...prev,
+      [memberId]: {
+        ...(prev[memberId] || {}),
+        [boss]: count
       }
-    }
+    }));
   };
+
+  const handleQuickScoreChange = useCallback((memberId: string, score: string) => {
+    handleScoreChange(memberId, activeBoss, score);
+  }, [activeBoss]);
+
+  const handleQuickEntryCountChange = useCallback((memberId: string, count: string) => {
+    handleEntryCountChange(memberId, activeBoss, count);
+  }, [activeBoss]);
+
+  const handleQuickAddMember = useCallback((memberId: string) => {
+    // Member is already in the list, just focus on their score
+  }, []);
+
+  // Convert members to format for MemberSearchBar
+  const enteredMembers = useMemo(() => members, [members]);
 
   const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
     if (e.key === 'Enter') {
@@ -246,6 +267,8 @@ export default function AdventEntryModal({ isOpen, onClose, editEntryId }: Adven
           const score = entries[member.id]?.[boss] || "";
           const totalScore = score ? parseInt(score, 10) : 0;
           const attendance = totalScore > 0;
+          const entryCount = entryCounts[member.id]?.[boss] || "";
+          const entryCountNum = entryCount ? parseInt(entryCount, 10) : 0;
 
           return {
             member_id: member.id,
@@ -253,6 +276,7 @@ export default function AdventEntryModal({ isOpen, onClose, editEntryId }: Adven
             boss,
             attendance,
             total_score: totalScore,
+            entry_count: entryCountNum,
           };
         }).filter(entry => entry !== null); // Remove null entries
       }).flat();
@@ -392,24 +416,24 @@ export default function AdventEntryModal({ isOpen, onClose, editEntryId }: Adven
 
           {/* Search and Add Member */}
           <div className="mb-4">
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                placeholder="Quick entry: type member name, add space + score, press Enter"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                className="flex-1 px-3 py-2 rounded border text-sm"
-                style={{
-                  backgroundColor: "rgba(128, 128, 128, 0.1)",
-                  borderColor: displayedMembers.length === 1 && searchQuery.match(/\s+\d+$/) ? "#22C55E" : "var(--color-border)",
-                  color: displayedMembers.length === 1 && searchQuery.match(/\s+\d+$/) ? "#22C55E" : "var(--color-foreground)",
-                }}
-              />
+            <div className="flex gap-2 items-start">
+              <div className="flex-1">
+                <MemberSearchBar
+                  searchQuery={searchQuery}
+                  onSearchChange={setSearchQuery}
+                  allMembers={members}
+                  enteredMembers={enteredMembers}
+                  isEditMode={false}
+                  onAddMember={handleQuickAddMember}
+                  onScoreChange={handleQuickScoreChange}
+                  onEntryCountChange={handleQuickEntryCountChange}
+                  placeholder={`Quick entry for ${activeBoss}: type member name + score + entries (e.g., "player 1000 5")`}
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => setIsAddMemberOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded hover:opacity-90"
+                className="flex items-center gap-2 px-4 py-2 rounded hover:opacity-90 mt-0"
                 style={{
                   backgroundColor: "var(--color-primary)",
                   color: "white",
@@ -418,28 +442,6 @@ export default function AdventEntryModal({ isOpen, onClose, editEntryId }: Adven
                 <FaPlus /> Add Member
               </button>
             </div>
-            
-            {/* Feedback Messages */}
-            {displayedMembers.length === 1 && searchQuery && (
-              searchQuery.match(/\s+\d+$/) ? (
-                <div className="text-xs px-1" style={{ color: "#22C55E", fontWeight: "600" }}>
-                  ✓ Ready! Press Enter to set score {parseInt(searchQuery.match(/\s+(\d+)$/)?.[1] || '0').toLocaleString()} for {displayedMembers[0].name} ({activeBoss})
-                </div>
-              ) : searchQuery.includes(' ') ? (
-                <div className="text-xs px-1" style={{ color: "#FBBF24", fontWeight: "500" }}>
-                  Preparing for {displayedMembers[0].name}... (add score)
-                </div>
-              ) : (
-                <div className="text-xs px-1" style={{ color: "#A78BFA", fontWeight: "500" }}>
-                  Preparing for {displayedMembers[0].name}... (add space + score)
-                </div>
-              )
-            )}
-            {displayedMembers.length === 0 && searchQuery && !searchQuery.match(/\s+\d+$/) && (
-              <div className="text-xs px-1" style={{ color: "var(--color-muted)" }}>
-                No members found matching "{searchQuery.replace(/\s+\d+$/, '')}"
-              </div>
-            )}
           </div>
 
           {/* Member Score Entry Table */}
@@ -448,17 +450,19 @@ export default function AdventEntryModal({ isOpen, onClose, editEntryId }: Adven
           ) : (
             <>
               <div className="mb-4">
-                <div className="grid grid-cols-[2fr,1fr,auto] gap-2 mb-2 font-semibold" style={{ color: "var(--color-foreground)" }}>
+                <div className="grid grid-cols-[2fr,1fr,1fr,auto] gap-2 mb-2 font-semibold" style={{ color: "var(--color-foreground)" }}>
                   <div>Member Name</div>
                   <div>Score ({activeBoss})</div>
+                  <div>Entries</div>
                   <div>Exclude</div>
                 </div>
                 {displayedMembers.map(member => {
                   const score = entries[member.id]?.[activeBoss] || "";
+                  const entryCount = entryCounts[member.id]?.[activeBoss] || "";
                   const entryKey = `${member.id}:${activeBoss}`;
                   const isExcluded = excludedEntries.has(entryKey);
                   return (
-                    <div key={member.id} className="grid grid-cols-[2fr,1fr,auto] gap-2 mb-2 items-center">
+                    <div key={member.id} className="grid grid-cols-[2fr,1fr,1fr,auto] gap-2 mb-2 items-center">
                       <div style={{ 
                         color: "var(--color-foreground)",
                         opacity: isExcluded ? 0.4 : 1,
@@ -475,6 +479,20 @@ export default function AdventEntryModal({ isOpen, onClose, editEntryId }: Adven
                         type="number"
                         value={score}
                         onChange={(e) => handleScoreChange(member.id, activeBoss, e.target.value)}
+                        placeholder="0"
+                        disabled={isExcluded}
+                        className="px-3 py-2 rounded"
+                        style={{
+                          backgroundColor: "var(--color-background)",
+                          border: "1px solid var(--color-border)",
+                          color: "var(--color-foreground)",
+                          opacity: isExcluded ? 0.4 : 1,
+                        }}
+                      />
+                      <input
+                        type="number"
+                        value={entryCount}
+                        onChange={(e) => handleEntryCountChange(member.id, activeBoss, e.target.value)}
                         placeholder="0"
                         disabled={isExcluded}
                         className="px-3 py-2 rounded"

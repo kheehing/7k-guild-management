@@ -15,18 +15,18 @@ This is a **Next.js 15 App Router** application for managing 7K game guild membe
   - `supabaseAdmin` — server-side with service role key (bypasses RLS)
 
 **Key tables**:
-- `logger` — audit trail (id, logged_by, created_at)
-- `members` — guild members (id, name, role, kicked, kick_date, logger_id, created_at)
+- `logger` — audit trail (id uuid PRIMARY KEY, logged_by text NOT NULL, created_at timestamp DEFAULT now())
+- `members` — guild members (id uuid PRIMARY KEY, name text NOT NULL, role text NOT NULL, kicked boolean DEFAULT false, kick_date date, logger_id uuid NOT NULL, created_at timestamp DEFAULT now())
   - `kicked` (boolean, default false): member status
   - `kick_date` (date, nullable): date member was kicked
   - Foreign key to logger for audit tracking
-- `castle_rush` — event records (id, castle, date, logger_id, created_at)
+- `castle_rush` — event records (id uuid PRIMARY KEY, castle text NOT NULL, date date NOT NULL, logger_id uuid NOT NULL, created_at timestamp DEFAULT now())
   - Foreign key to logger
-- `castle_rush_entry` — member participation (id, member_id, castle_rush_id, attendance, score, logger_id, created_at)
+- `castle_rush_entry` — member participation (id uuid PRIMARY KEY, member_id uuid, castle_rush_id uuid, attendance boolean NOT NULL, score integer, logger_id uuid NOT NULL, created_at timestamp DEFAULT now())
   - Foreign keys to members, castle_rush, and logger
-- `advent_expedition` — expedition events (id, date, logger_id, created_at)
+- `advent_expedition` — expedition events (id uuid PRIMARY KEY, date date NOT NULL, logger_id uuid NOT NULL, created_at timestamp DEFAULT now())
   - Foreign key to logger
-- `advent_expedition_entry` — expedition participation (id, advent_expedition_id, member_id, date, boss, attendance, total_score, logger_id, created_at)
+- `advent_expedition_entry` — expedition participation (id uuid PRIMARY KEY, advent_expedition_id uuid, member_id uuid, date date NOT NULL, boss text NOT NULL, attendance boolean NOT NULL, total_score integer, entry_count integer, logger_id uuid NOT NULL, created_at timestamp DEFAULT now())
   - Foreign keys to advent_expedition, members, and logger
 
 **Critical pattern**: Always fetch via API routes (`/api/members`, `/api/castle-rush-entry`, `/api/dev/castle-rush-entries`) from client components. Direct Supabase queries are only in API routes or tabs using `supabase.from()` with proper joins. For member status, always join and select `kicked` and `kick_date` fields from `members`.

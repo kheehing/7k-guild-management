@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, lazy, Suspense, memo } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "../../lib/supabaseClient";
 import Sidebar from "../components/Sidebar";
 import TabNavigation from "../components/TabNavigation";
 import MemberProfile from "../components/MemberProfile";
@@ -22,9 +24,12 @@ interface Member {
 }
 
 export default function Page() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [loading, setLoading] = useState(true);
 
+  // All hooks must be called before any conditional returns
   const handleOpenProfile = useCallback((e: CustomEvent) => {
     setSelectedMember(e.detail);
   }, []);
@@ -39,10 +44,51 @@ export default function Page() {
     window.dispatchEvent(new CustomEvent("memberUpdated"));
   }, []);
 
+  // Check authentication on mount and set up auth listener
+  useEffect(() => {
+    let mounted = true;
+
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (mounted) {
+        if (!user) {
+          router.push("/");
+        } else {
+          setLoading(false);
+        }
+      }
+    };
+
+    checkAuth();
+
+    // Listen for auth state changes (including session expiry)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' && !session) {
+        router.push("/");
+      } else if (!session) {
+        router.push("/");
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
   useEffect(() => {
     window.addEventListener("openProfile", handleOpenProfile as EventListener);
     return () => window.removeEventListener("openProfile", handleOpenProfile as EventListener);
   }, [handleOpenProfile]);
+
+  // Show loading state while checking auth
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center" style={{ backgroundColor: "var(--color-background)" }}>
+        <div className="text-sm" style={{ color: "var(--color-muted)" }}>Loading...</div>
+      </div>
+    );
+  }
 
   const tabs = [
     { id: "overview", label: "Overview" },

@@ -1,32 +1,50 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { supabase } from "../../lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { supabase } from "../../lib/supabaseClient";
 
 export default function DevPage() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
 
+  // Check authentication on mount and set up auth listener
   useEffect(() => {
+    let mounted = true;
+
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (mounted) {
+        if (!user) {
+          router.push("/");
+        } else {
+          setLoading(false);
+        }
+      }
+    };
+
     checkAuth();
-  }, []);
 
-  async function checkAuth() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      router.push("/");
-    } else {
-      setIsAuthenticated(true);
-    }
-    setLoading(false);
-  }
+    // Listen for auth state changes (including session expiry)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED' && !session) {
+        router.push("/");
+      } else if (!session) {
+        router.push("/");
+      }
+    });
 
-  if (loading || !isAuthenticated) {
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  // Show loading state while checking auth
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "var(--color-bg)" }}>
-        <div style={{ color: "var(--color-muted)" }}>Loading...</div>
+      <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: "var(--color-background)" }}>
+        <div className="text-sm" style={{ color: "var(--color-muted)" }}>Loading...</div>
       </div>
     );
   }

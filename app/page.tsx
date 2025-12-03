@@ -18,24 +18,22 @@ export default function Page() {
 
     // check current user/session and redirect if found
     (async () => {
-      const { data } = await supabase.auth.getUser();
-      const currentUser = data.user ?? null;
-      if (mounted && currentUser) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (mounted && session?.user) {
         router.push("/dashboard");
       }
-      if (mounted) setUser(currentUser);
     })();
 
     // listen for auth changes and redirect on sign in
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) router.push("/dashboard");
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        router.push("/dashboard");
+      }
     });
 
     return () => {
       mounted = false;
-      sub.subscription.unsubscribe();
+      subscription.unsubscribe();
     };
   }, [router]);
 

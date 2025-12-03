@@ -1,5 +1,6 @@
 import { FaTimes } from "react-icons/fa";
 import Notification from "./Notification";
+import MemberSearchBar from "./MemberSearchBar";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../lib/supabaseClient";
 
@@ -322,37 +323,6 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
     setEnteredMembers(prev => [...prev, ...membersToAdd]);
   };
 
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      
-      // Calculate search results inline
-      const queryWithoutNumbers = searchQuery.replace(/\s+\d+$/, '').toLowerCase().trim();
-      const results = allMembers.filter((m) => 
-        (isEditMode || !m.kicked) && 
-        m.name.toLowerCase().includes(queryWithoutNumbers)
-      );
-      
-      if (results.length === 1) {
-        const member = results[0];
-        const isAlreadyEntered = enteredMembers.find(m => m.id === member.id);
-        
-        // Auto-add member if not already entered
-        if (!isAlreadyEntered) {
-          handleAddMemberToEntry(member.id);
-        }
-        
-        // Check for score in search query
-        const numberMatch = searchQuery.match(/\s+(\d+)$/);
-        if (numberMatch) {
-          const score = numberMatch[1];
-          handleScoreChange(member.id, score);
-          setSearchQuery("");
-        }
-      }
-    }
-  };
-
   const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
     if (e.key === 'Enter') {
       // Allow Enter to submit only if search bar is empty
@@ -365,21 +335,6 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
       }
     }
   };
-
-  // Search results for quick entry - only shows when searching
-  const searchResults = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    
-    const queryWithoutNumbers = searchQuery.replace(/\s+\d+$/, '').toLowerCase().trim();
-    const filtered = allMembers.filter((m) => 
-      // In edit mode, always show all members (including kicked)
-      // In add mode, only show active members
-      (isEditMode || !m.kicked) && 
-      m.name.toLowerCase().includes(queryWithoutNumbers)
-    );
-    
-    return filtered;
-  }, [allMembers, searchQuery, isEditMode]);
 
   // Entered members sorted by score
   const displayedEntries = useMemo(() => {
@@ -649,21 +604,15 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
             </div>
             
             {/* Search Bar */}
-            <div className="mb-3 relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                placeholder="Quick entry: type member name, add space + score, press Enter"
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{
-                  background: "rgba(128, 128, 128, 0.1)",
-                  borderColor: searchResults.length === 1 && searchQuery.match(/\s+\d+$/) ? "#22C55E" : "var(--color-border)",
-                  color: searchResults.length === 1 && searchQuery.match(/\s+\d+$/) ? "#22C55E" : "var(--color-foreground)",
-                }}
-              />
-            </div>
+            <MemberSearchBar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              allMembers={allMembers}
+              enteredMembers={enteredMembers}
+              isEditMode={isEditMode}
+              onAddMember={handleAddMemberToEntry}
+              onScoreChange={handleScoreChange}
+            />
 
             {loading ? (
               <div className="text-sm" style={{ color: "var(--color-muted)" }}>
@@ -671,69 +620,6 @@ export default function CastleRushEntryModal({ isOpen, onClose, days, editEntryI
               </div>
             ) : (
               <div className="space-y-3 relative">
-                {/* Search results dropdown - only show when searching */}
-                {searchQuery && searchResults.length > 0 && (
-                  <div 
-                    className="border rounded-lg overflow-auto absolute z-50 w-full"
-                    style={{ 
-                      borderColor: "var(--color-border)",
-                      maxHeight: "200px",
-                      backgroundColor: "var(--color-surface)",
-                      boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)",
-                      top: "-12px"
-                    }}
-                  >
-                    {searchResults.map((member) => {
-                      const isAlreadyEntered = enteredMembers.find(m => m.id === member.id);
-                      const numberMatch = searchQuery.match(/\s+(\d+)$/);
-                      const isReadyToSubmit = searchResults.length === 1 && numberMatch;
-                      
-                      return (
-                        <div
-                          key={member.id}
-                          onClick={() => {
-                            if (!isAlreadyEntered) {
-                              handleAddMemberToEntry(member.id);
-                            }
-                            if (numberMatch) {
-                              handleScoreChange(member.id, numberMatch[1]);
-                              setSearchQuery("");
-                            }
-                          }}
-                          className="px-3 py-2 cursor-pointer border-b"
-                          style={{
-                            borderColor: "var(--color-border)",
-                            backgroundColor: isReadyToSubmit ? "rgba(34, 197, 94, 0.1)" : "transparent",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = isReadyToSubmit ? "rgba(34, 197, 94, 0.2)" : "rgba(128, 128, 128, 0.1)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = isReadyToSubmit ? "rgba(34, 197, 94, 0.1)" : "transparent";
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm">
-                              {member.name}
-                              {isAlreadyEntered && (
-                                <span className="ml-1 text-xs" style={{ color: member.kicked ? "#ef4444" : "#22C55E" }}>
-                                  ({member.kicked ? "kicked" : "active"})
-                                </span>
-                              )}
-                              {!isAlreadyEntered && member.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
-                            </span>
-                            {isReadyToSubmit && (
-                              <span className="text-xs font-semibold" style={{ color: "#22C55E" }}>
-                                Score: {parseInt(numberMatch[1]).toLocaleString()}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
                 {/* Entered members table */}
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium" style={{ color: "var(--color-foreground)" }}>

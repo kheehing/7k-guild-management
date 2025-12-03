@@ -1,6 +1,7 @@
 import { FaTimes, FaPlus } from "react-icons/fa";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../lib/supabaseClient";
+import MemberSearchBar from "./MemberSearchBar";
 
 interface Member {
   id: string;
@@ -131,45 +132,6 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
     }
   };
 
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      
-      // Calculate search results inline
-      const queryWithoutNumbers = searchQuery.replace(/\s+\d+$/, '').toLowerCase().trim();
-      const results = allMembers.filter((m) => 
-        m.name.toLowerCase().includes(queryWithoutNumbers) &&
-        !participants.find(p => p.memberId === m.id)
-      );
-      
-      if (results.length === 1) {
-        const member = results[0];
-        const isAlreadyEntered = participants.find(p => p.memberId === member.id);
-        
-        // Auto-add member if not already entered
-        if (!isAlreadyEntered) {
-          handleAddMemberToEntry(member.id);
-        }
-        
-        // Check for score in search query
-        const numberMatch = searchQuery.match(/\s+(\d+)$/);
-        if (numberMatch) {
-          const score = numberMatch[1];
-          handleScoreChange(member.id, score);
-          setSearchQuery("");
-        }
-      }
-    }
-  };
-
-  // Search results for quick entry
-  const searchResults = allMembers.filter((m) => {
-    if (!searchQuery.trim()) return false;
-    const queryWithoutNumbers = searchQuery.replace(/\s+\d+$/, '').toLowerCase().trim();
-    return m.name.toLowerCase().includes(queryWithoutNumbers) &&
-      !participants.find(p => p.memberId === m.id);
-  });
-
   // Displayed entries sorted by score
   const displayedEntries = participants.sort((a, b) => {
     const scoreA = parseInt(entries[a.memberId || ''] || '0');
@@ -177,6 +139,16 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
     if (scoreA !== scoreB) return scoreB - scoreA;
     return a.memberName.localeCompare(b.memberName);
   });
+
+  // Convert participants to Member format for MemberSearchBar
+  const enteredMembers = useMemo(() => {
+    return participants.map(p => ({
+      id: p.memberId || '',
+      name: p.memberName,
+      role: '',
+      kicked: false
+    }));
+  }, [participants]);
 
   // Calculate total score
   const totalScore = Object.values(entries)
@@ -405,89 +377,15 @@ export default function HistoricalCastleRushModal({ isOpen, onClose }: Historica
           {/* New Search-based Entry System */}
           <div>
             <label className="block text-sm mb-2">Members & Scores</label>
-            <div className="mb-3 relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                placeholder="Quick entry: type member name, add space + score, press Enter"
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{
-                  background: "rgba(128, 128, 128, 0.1)",
-                  borderColor: searchResults.length === 1 && searchQuery.match(/\s+\d+$/) 
-                    ? "#22C55E" 
-                    : searchResults.length === 1 
-                      ? "#FBBF24" 
-                      : "var(--color-border)",
-                  color: searchResults.length === 1 && searchQuery.match(/\s+\d+$/) 
-                    ? "#22C55E" 
-                    : searchResults.length === 1 
-                      ? "#FBBF24" 
-                      : "var(--color-foreground)",
-                }}
-              />
-              {searchQuery && searchResults.length > 0 && (
-                <div 
-                  className="border rounded-lg overflow-auto absolute z-50 mt-1 w-full"
-                  style={{ 
-                    borderColor: "var(--color-border)",
-                    maxHeight: "200px",
-                    backgroundColor: "var(--color-surface)",
-                    boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)"
-                  }}
-                >
-                  {searchResults.map((member) => {
-                    const isAlreadyEntered = participants.find(p => p.memberId === member.id);
-                    const numberMatch = searchQuery.match(/\s+(\d+)$/);
-                    const isReadyToSubmit = searchResults.length === 1 && numberMatch;
-                    
-                    return (
-                      <div
-                        key={member.id}
-                        onClick={() => {
-                          if (!isAlreadyEntered) {
-                            handleAddMemberToEntry(member.id);
-                          }
-                          if (numberMatch) {
-                            handleScoreChange(member.id, numberMatch[1]);
-                            setSearchQuery("");
-                          }
-                        }}
-                        className="px-3 py-2 cursor-pointer border-b"
-                        style={{
-                          borderColor: "var(--color-border)",
-                          backgroundColor: isReadyToSubmit ? "rgba(34, 197, 94, 0.1)" : "transparent",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = isReadyToSubmit ? "rgba(34, 197, 94, 0.2)" : "rgba(128, 128, 128, 0.1)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = isReadyToSubmit ? "rgba(34, 197, 94, 0.1)" : "transparent";
-                        }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm">
-                            {member.name}
-                            {isAlreadyEntered && (
-                              <span className="ml-1 text-xs" style={{ color: member.kicked ? "#ef4444" : "#22C55E" }}>
-                                ({member.kicked ? "kicked" : "active"})
-                              </span>
-                            )}
-                            {!isAlreadyEntered && member.kicked && <span className="ml-1 text-xs" style={{ color: "var(--color-muted)" }}>(kicked)</span>}
-                          </span>
-                          {isReadyToSubmit && (
-                            <span className="text-xs font-semibold" style={{ color: "#22C55E" }}>
-                              Score: {parseInt(numberMatch[1]).toLocaleString()}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <MemberSearchBar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              allMembers={allMembers}
+              enteredMembers={enteredMembers}
+              isEditMode={false}
+              onAddMember={handleAddMemberToEntry}
+              onScoreChange={handleScoreChange}
+            />
 
             {participants.length === 0 ? (
               <div className="text-sm p-6 rounded border text-center" style={{ 
