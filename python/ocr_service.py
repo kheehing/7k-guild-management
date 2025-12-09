@@ -301,4 +301,8 @@ def extract():
 if __name__ == '__main__':
     print("Starting OCR Service...")
     print("Tesseract OCR initialized")
-    app.run(host='127.0.0.1', port=5000, debug=True)
+    # Use PORT env var for Render, default to 5000 for local
+    port = int(os.environ.get('PORT', 5000))
+    # Use 0.0.0.0 to accept external connections on Render
+    host = '0.0.0.0' if os.environ.get('PORT') else '127.0.0.1'
+    app.run(host=host, port=port, debug=False)
