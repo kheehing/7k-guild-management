@@ -1,0 +1,15 @@
+{
+  "rewrites": [
+    {
+      "source": "/test",
+      "destination": "/404",
+      "has": [
+        {
+          "type": "header",
+          "key": "host",
+          "value": "(?!localhost|127\\.0\\.0\\.1).*"
+        }
+      ]
+    }
+  ]
+}

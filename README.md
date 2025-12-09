@@ -45,7 +45,12 @@ A modern, high-performance guild management platform built for the **Ap0theosis*
 - **Castle Rush Tab**: Calendar-based entry management
   - Monthly calendar view with grade badges
   - Add/edit/delete Castle Rush entries
-  - Historical entries modal
+  - **Screen Capture**: Live OCR extraction from game window
+    - Multi-language support (English, Chinese, Thai)
+    - Auto-extract player scores every 3 seconds
+    - Guild member filtering
+    - One entry per player (no duplicates)
+  - Historical entries modal for bulk import
   - Score grading system (F to EX+)
   - Attendance tracking per castle
 
@@ -147,18 +152,29 @@ See [PERFORMANCE.md](PERFORMANCE.md) for detailed optimization guide and databas
    NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...   # Public anon key
    SUPABASE_URL=https://xxx.supabase.co        # Server-side
    SUPABASE_SECRET_KEY=eyJhbGc...              # Service role JWT
+   NEXT_PUBLIC_OCR_SERVICE_URL=http://127.0.0.1:5000  # OCR service (dev)
    ```
 
-4. **Run database indexes** (optional but recommended)
+4. **Set up Python OCR service** (optional - for screen capture feature)
+   ```bash
+   cd python
+   pip install -r requirements.txt
+   # Follow python/README.md for Tesseract installation
+   python ocr_service.py
+   ```
+   
+   **For production deployment**, see [DEPLOYMENT.md](DEPLOYMENT.md) for Railway/Render setup.
+
+5. **Run database indexes** (optional but recommended)
    
    Execute SQL from [PERFORMANCE.md](PERFORMANCE.md) in Supabase SQL editor.
 
-5. **Start development server**
+6. **Start development server**
    ```bash
    npm run dev
    ```
 
-6. **Open [http://localhost:3000](http://localhost:3000)**
+7. **Open [http://localhost:3000](http://localhost:3000)**
 
 ### Build for Production
 
@@ -176,9 +192,19 @@ npm start
 
 ### Recording Castle Rush
 1. Navigate to **Castle Rush** tab
-2. Click date on calendar or **+ Add Entry** button
-3. Select castle, enter member scores
-4. Submit to save
+2. Choose one of three methods:
+   - **Capture**: Click **Capture** button → Share game window → Auto-extract scores (requires Python OCR service)
+   - **Add Entry**: Click **+ Add Entry** → Select date/castle → Enter scores manually
+   - **Import Historical**: Click **Import Historical** → Upload CSV/Excel file
+3. Submit to save
+
+**Screen Capture Workflow**:
+1. Click **Capture** button in Castle Rush tab
+2. Select date for entry
+3. Click **Start Screen Capture** → Share game window (not browser/monitor)
+4. Click **Start Auto-Extract** → Scroll through rankings
+5. System auto-extracts guild members every 3 seconds
+6. Review saved entries → Click **Submit** when done
 
 ### Recording Advent Expedition
 1. Navigate to **Advent** tab

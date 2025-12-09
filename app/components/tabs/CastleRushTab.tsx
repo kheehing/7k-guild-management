@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { FaPlus, FaHistory } from "react-icons/fa";
+import { FaPlus, FaHistory, FaCamera } from "react-icons/fa";
 import CastleRushEntryModal from "../CastleRushEntryModal";
 import HistoricalCastleRushModal from "../HistoricalCastleRushModal";
+import CaptureEntryModal from "../CaptureEntryModal";
 import { supabase } from "../../../lib/supabaseClient";
 
 interface CastleRushEntry {
@@ -32,6 +33,7 @@ function getScoreGrade(score: number): { grade  : string; color: string; bgColor
 export default function CastleRushTab() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isHistoricalOpen, setIsHistoricalOpen] = useState(false);
+  const [isCaptureOpen, setIsCaptureOpen] = useState(false);
   const [castleRushData, setCastleRushData] = useState<CastleRushEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
@@ -215,6 +217,17 @@ export default function CastleRushTab() {
             <span>Import Historical</span>
           </button>
           <button
+            onClick={() => setIsCaptureOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors hover:opacity-90"
+            style={{
+              backgroundColor: "rgba(139, 92, 246, 0.8)",
+              color: "white",
+            }}
+          >
+            <FaCamera />
+            <span>Capture</span>
+          </button>
+          <button
             onClick={() => setIsAddOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors hover:opacity-90"
             style={{
@@ -355,6 +368,15 @@ export default function CastleRushTab() {
         onClose={() => {
           setIsHistoricalOpen(false);
           loadCastleRushData(); // Reload data after importing
+        }}
+      />
+
+      {/* Capture Entry Modal */}
+      <CaptureEntryModal
+        isOpen={isCaptureOpen}
+        onClose={() => {
+          setIsCaptureOpen(false);
+          loadCastleRushData(); // Reload data after capture
         }}
       />
     </div>

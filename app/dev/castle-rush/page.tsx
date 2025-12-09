@@ -93,6 +93,58 @@ export default function DevCastleRushPage() {
     setEditingId(null);
   };
 
+  const handleDeleteCastleRush = async () => {
+    if (!selectedDate) return;
+    
+    if (!confirm(`Are you sure you want to delete ALL Castle Rush entries for ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { 
+      month: 'long', 
+      day: 'numeric', 
+      year: 'numeric' 
+    })}? This will delete the castle rush event and all associated member entries.`)) return;
+
+    try {
+      setLoading(true);
+      
+      // Get the castle_rush record for this date
+      const { data: castleRushData, error: fetchError } = await supabase
+        .from('castle_rush')
+        .select('id')
+        .eq('date', selectedDate)
+        .single();
+
+      if (fetchError) throw fetchError;
+      if (!castleRushData) {
+        alert("Castle Rush entry not found");
+        return;
+      }
+
+      // Delete all castle_rush_entry records first (foreign key constraint)
+      const { error: entriesError } = await supabase
+        .from('castle_rush_entry')
+        .delete()
+        .eq('castle_rush_id', castleRushData.id);
+
+      if (entriesError) throw entriesError;
+
+      // Delete the castle_rush record
+      const { error: castleRushError } = await supabase
+        .from('castle_rush')
+        .delete()
+        .eq('id', castleRushData.id);
+
+      if (castleRushError) throw castleRushError;
+
+      alert("Castle Rush entry deleted successfully");
+      handleBackToCalendar();
+      loadCalendarEvents(); // Refresh calendar
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Failed to delete Castle Rush entry");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDelete = async (entryId: string) => {
     if (!confirm("Are you sure you want to delete this entry?")) return;
 
@@ -292,18 +344,34 @@ export default function DevCastleRushPage() {
     <div className="min-h-screen p-8" style={{ backgroundColor: "var(--color-bg)" }}>
       <div className="max-w-7xl mx-auto">
         <div className="space-y-4">
-          {/* Back Button */}
-          <button
-            onClick={handleBackToCalendar}
-            className="flex items-center gap-2 px-4 py-2 rounded transition-colors"
-            style={{
-              backgroundColor: "var(--color-surface)",
-              color: "var(--color-foreground)",
-            }}
-          >
-            <FaArrowLeft />
-            Back to Calendar
-          </button>
+          {/* Back Button and Delete Castle Rush Button */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={handleBackToCalendar}
+              className="flex items-center gap-2 px-4 py-2 rounded transition-colors"
+              style={{
+                backgroundColor: "var(--color-surface)",
+                color: "var(--color-foreground)",
+              }}
+            >
+              <FaArrowLeft />
+              Back to Calendar
+            </button>
+
+            <button
+              onClick={handleDeleteCastleRush}
+              disabled={loading}
+              className="px-4 py-2 rounded transition-colors"
+              style={{
+                backgroundColor: "#EF4444",
+                color: "white",
+                opacity: loading ? 0.5 : 1,
+                cursor: loading ? "not-allowed" : "pointer",
+              }}
+            >
+              Delete Castle Rush Entry
+            </button>
+          </div>
 
           {/* Selected Date Header */}
           <div className="mb-4">
