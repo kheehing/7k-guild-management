@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from "react";
 import { supabase } from "../../../lib/supabaseClient";
-import { FaChartLine, FaUsers, FaTrophy, FaExclamationTriangle, FaCheckCircle, FaTimesCircle } from "react-icons/fa";
+import { FaChartLine, FaUsers, FaTrophy, FaExclamationTriangle, FaCheckCircle, FaTimesCircle, FaTimes } from "react-icons/fa";
 
 interface Member {
   id: string;
@@ -53,6 +53,8 @@ export default function AnalysisTab() {
   const [sortBy, setSortBy] = useState<'attendance' | 'average' | 'activity' | 'consistency'>('attendance');
   const [viewMode, setViewMode] = useState<'table' | 'insights'>('insights');
   const [filterCategory, setFilterCategory] = useState<'all' | 'top' | 'atrisk' | 'inactive'>('all');
+  const [selectedMember, setSelectedMember] = useState<MemberStats | null>(null);
+  const [showRiskModal, setShowRiskModal] = useState(false);
 
   useEffect(() => {
     loadAnalysis();
@@ -382,6 +384,31 @@ export default function AnalysisTab() {
     if (rate >= 80) return "#10b981";
     if (rate >= 60) return "#f59e0b";
     return "#ef4444";
+  }
+
+  function showRiskBreakdown(member: MemberStats) {
+    setSelectedMember(member);
+    setShowRiskModal(true);
+  }
+
+  function getRiskLevel(score: number): { label: string; color: string; bgColor: string } {
+    if (score >= 100) return { label: "CRITICAL", color: "#ef4444", bgColor: "rgba(239, 68, 68, 0.1)" };
+    if (score >= 50) return { label: "HIGH", color: "#f59e0b", bgColor: "rgba(245, 158, 11, 0.1)" };
+    if (score >= 20) return { label: "MODERATE", color: "#eab308", bgColor: "rgba(234, 179, 8, 0.1)" };
+    return { label: "LOW", color: "#10b981", bgColor: "rgba(16, 185, 129, 0.1)" };
+  }
+
+  function calculateMemberTenure(member: MemberStats): number {
+    // Calculate days since member joined (from first entry)
+    if (!member.lastEntry) return 0;
+    const firstEntry = stats.find(s => s.memberId === member.memberId);
+    if (!firstEntry) return 0;
+    
+    // Estimate join date from total entries and last entry
+    const avgDaysBetweenEvents = 2; // Assume events every 2 days on average
+    const estimatedJoinDate = new Date(member.lastEntry).getTime() - (member.totalEntries * avgDaysBetweenEvents * 24 * 60 * 60 * 1000);
+    const daysSinceJoin = Math.floor((Date.now() - estimatedJoinDate) / (1000 * 60 * 60 * 24));
+    return Math.max(daysSinceJoin, member.totalEntries); // At least as many days as entries
   }
 
   if (loading) {
@@ -906,6 +933,30 @@ export default function AnalysisTab() {
                           ))}
                         </div>
                       </td>
+                      <td className="p-4 text-center">
+                        {s.totalEntries >= 3 ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <div
+                              className="px-3 py-1.5 rounded-lg text-sm font-bold cursor-pointer"
+                              style={{
+                                backgroundColor: s.riskScore >= 100 ? "#ef4444" : 
+                                               s.riskScore >= 50 ? "#f59e0b" : "#10b981",
+                                color: "white"
+                              }}
+                              onClick={() => {
+                                const memberData = stats.find(st => st.memberId === s.memberId);
+                                if (memberData) showRiskBreakdown(memberData);
+                              }}
+                            >
+                              {s.riskScore.toFixed(0)}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs" style={{ color: "var(--color-muted)" }}>
+                            New
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -919,6 +970,424 @@ export default function AnalysisTab() {
             </div>
           )}
         </>
+      )}
+
+      {/* Risk Analysis Modal */}
+      {showRiskModal && selectedMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0" 
+            style={{ backgroundColor: "rgba(0, 0, 0, 0.7)" }}
+            onClick={() => setShowRiskModal(false)}
+          />
+
+          {/* Modal */}
+          <div 
+            className="relative rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-auto"
+            style={{
+              backgroundColor: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+            }}
+          >
+            {/* Header */}
+            <div 
+              className="sticky top-0 z-10 flex items-center justify-between p-6 border-b"
+              style={{
+                borderColor: "var(--color-border)",
+                backgroundColor: "var(--color-surface)",
+              }}
+            >
+              <div>
+                <h2 className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>
+                  Risk Analysis: {selectedMember.memberName}
+                </h2>
+                <p className="text-sm mt-1" style={{ color: "var(--color-muted)" }}>
+                  Comprehensive performance and risk breakdown
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRiskModal(false)}
+                className="p-2 rounded-lg hover:opacity-80"
+                style={{
+                  backgroundColor: "rgba(0,0,0,0.1)",
+                  color: "var(--color-foreground)",
+                }}
+              >
+                <FaTimes />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-6">
+              {/* Risk Score Overview */}
+              <div
+                className="p-6 rounded-lg"
+                style={{
+                  backgroundColor: getRiskLevel(selectedMember.riskScore).bgColor,
+                  border: `2px solid ${getRiskLevel(selectedMember.riskScore).color}`,
+                }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="text-sm font-medium mb-1" style={{ color: "var(--color-muted)" }}>
+                      Overall Risk Score
+                    </div>
+                    <div className="text-6xl font-bold" style={{ color: getRiskLevel(selectedMember.riskScore).color }}>
+                      {selectedMember.riskScore.toFixed(0)}
+                    </div>
+                  </div>
+                  <div
+                    className="px-6 py-3 rounded-lg text-xl font-bold"
+                    style={{
+                      backgroundColor: getRiskLevel(selectedMember.riskScore).color,
+                      color: "white",
+                    }}
+                  >
+                    {getRiskLevel(selectedMember.riskScore).label}
+                  </div>
+                </div>
+                <div className="text-sm" style={{ color: "var(--color-muted)" }}>
+                  Formula: (100 - Attendance%) × (1 + Total Entries ÷ 10) = ({(100 - selectedMember.attendanceRate).toFixed(1)}%) × (1 + {selectedMember.totalEntries} ÷ 10) = {selectedMember.riskScore.toFixed(0)}
+                </div>
+              </div>
+
+              {/* Key Metrics Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div
+                  className="p-4 rounded-lg"
+                  style={{
+                    backgroundColor: "var(--color-bg)",
+                    border: "1px solid var(--color-border)",
+                  }}
+                >
+                  <div className="text-xs mb-1" style={{ color: "var(--color-muted)" }}>
+                    Attendance Rate
+                  </div>
+                  <div className="text-2xl font-bold" style={{ color: getAttendanceColor(selectedMember.attendanceRate) }}>
+                    {selectedMember.attendanceRate.toFixed(1)}%
+                  </div>
+                  <div className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>
+                    {(selectedMember.totalEntries * selectedMember.attendanceRate / 100).toFixed(0)} / {selectedMember.totalEntries} events
+                  </div>
+                </div>
+
+                <div
+                  className="p-4 rounded-lg"
+                  style={{
+                    backgroundColor: "var(--color-bg)",
+                    border: "1px solid var(--color-border)",
+                  }}
+                >
+                  <div className="text-xs mb-1" style={{ color: "var(--color-muted)" }}>
+                    Avg Score (7d)
+                  </div>
+                  <div className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>
+                    {selectedMember.averageScore > 0 ? selectedMember.averageScore.toFixed(0) : "N/A"}
+                  </div>
+                  <div className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>
+                    High: {selectedMember.highestScore.toLocaleString()}
+                  </div>
+                </div>
+
+                <div
+                  className="p-4 rounded-lg"
+                  style={{
+                    backgroundColor: "var(--color-bg)",
+                    border: "1px solid var(--color-border)",
+                  }}
+                >
+                  <div className="text-xs mb-1" style={{ color: "var(--color-muted)" }}>
+                    Last Active
+                  </div>
+                  <div className="text-2xl font-bold" style={{ color: "var(--color-foreground)" }}>
+                    {selectedMember.daysSinceLastEntry !== null ? `${selectedMember.daysSinceLastEntry}d` : "N/A"}
+                  </div>
+                  <div className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>
+                    {selectedMember.lastEntry ? new Date(selectedMember.lastEntry).toLocaleDateString() : "No entries"}
+                  </div>
+                </div>
+
+                <div
+                  className="p-4 rounded-lg"
+                  style={{
+                    backgroundColor: "var(--color-bg)",
+                    border: "1px solid var(--color-border)",
+                  }}
+                >
+                  <div className="text-xs mb-1" style={{ color: "var(--color-muted)" }}>
+                    Consistency
+                  </div>
+                  <div className="text-2xl font-bold" style={{ color: selectedMember.consistency >= 70 ? "#10b981" : "#f59e0b" }}>
+                    {selectedMember.consistency > 0 ? selectedMember.consistency.toFixed(0) : "N/A"}
+                  </div>
+                  <div className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>
+                    {selectedMember.consistency >= 70 ? "Stable" : "Variable"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Risk Factors Breakdown */}
+              <div>
+                <h3 className="text-lg font-bold mb-4" style={{ color: "var(--color-foreground)" }}>
+                  Risk Factors Analysis
+                </h3>
+                <div className="space-y-3">
+                  {/* Attendance Risk */}
+                  <div
+                    className="p-4 rounded-lg"
+                    style={{
+                      backgroundColor: "var(--color-bg)",
+                      border: "1px solid var(--color-border)",
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        {selectedMember.attendanceRate < 70 ? (
+                          <FaTimesCircle size={20} style={{ color: "#ef4444" }} />
+                        ) : (
+                          <FaCheckCircle size={20} style={{ color: "#10b981" }} />
+                        )}
+                        <span className="font-semibold" style={{ color: "var(--color-foreground)" }}>
+                          Attendance Pattern
+                        </span>
+                      </div>
+                      <div
+                        className="px-3 py-1 rounded text-sm font-bold"
+                        style={{
+                          backgroundColor: selectedMember.attendanceRate >= 80 ? "#10b981" : 
+                                         selectedMember.attendanceRate >= 70 ? "#f59e0b" : "#ef4444",
+                          color: "white"
+                        }}
+                      >
+                        {selectedMember.attendanceRate >= 80 ? "Excellent" : 
+                         selectedMember.attendanceRate >= 70 ? "Acceptable" : "Poor"}
+                      </div>
+                    </div>
+                    <div className="text-sm space-y-1" style={{ color: "var(--color-muted)" }}>
+                      <div>• Attended: {(selectedMember.totalEntries * selectedMember.attendanceRate / 100).toFixed(0)} events</div>
+                      <div>• Missed: {selectedMember.totalEntries - (selectedMember.totalEntries * selectedMember.attendanceRate / 100)} events</div>
+                      <div>• Castle Rush: {selectedMember.castleRushAttendance.toFixed(0)}% ({selectedMember.castleRushEntries} events)</div>
+                      <div>• Advent Expedition: {selectedMember.adventAttendance.toFixed(0)}% ({selectedMember.adventEntries} events)</div>
+                    </div>
+                  </div>
+
+                  {/* Activity Risk */}
+                  <div
+                    className="p-4 rounded-lg"
+                    style={{
+                      backgroundColor: "var(--color-bg)",
+                      border: "1px solid var(--color-border)",
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        {selectedMember.daysSinceLastEntry !== null && selectedMember.daysSinceLastEntry >= 3 ? (
+                          <FaExclamationTriangle size={20} style={{ color: "#f59e0b" }} />
+                        ) : (
+                          <FaCheckCircle size={20} style={{ color: "#10b981" }} />
+                        )}
+                        <span className="font-semibold" style={{ color: "var(--color-foreground)" }}>
+                          Recent Activity
+                        </span>
+                      </div>
+                      <div
+                        className="px-3 py-1 rounded text-sm font-bold"
+                        style={{
+                          backgroundColor: selectedMember.daysSinceLastEntry === null || selectedMember.daysSinceLastEntry <= 1 ? "#10b981" :
+                                         selectedMember.daysSinceLastEntry <= 3 ? "#f59e0b" : "#ef4444",
+                          color: "white"
+                        }}
+                      >
+                        {selectedMember.daysSinceLastEntry === null ? "No Data" :
+                         selectedMember.daysSinceLastEntry <= 1 ? "Active" :
+                         selectedMember.daysSinceLastEntry <= 3 ? "Recent" : "Inactive"}
+                      </div>
+                    </div>
+                    <div className="text-sm space-y-1" style={{ color: "var(--color-muted)" }}>
+                      <div>• Last Entry: {selectedMember.lastEntry ? new Date(selectedMember.lastEntry).toLocaleString() : "Never"}</div>
+                      <div>• Days Inactive: {selectedMember.daysSinceLastEntry ?? "Unknown"}</div>
+                      <div>• Weekly Activity: {selectedMember.weeklyActivity.reduce((a, b) => a + b, 0)} events in last 7 days</div>
+                    </div>
+                  </div>
+
+                  {/* Performance Risk */}
+                  <div
+                    className="p-4 rounded-lg"
+                    style={{
+                      backgroundColor: "var(--color-bg)",
+                      border: "1px solid var(--color-border)",
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <FaChartLine size={20} style={{ color: "#8b5cf6" }} />
+                        <span className="font-semibold" style={{ color: "var(--color-foreground)" }}>
+                          Performance Metrics
+                        </span>
+                      </div>
+                      <div
+                        className="px-3 py-1 rounded text-sm font-bold"
+                        style={{
+                          backgroundColor: selectedMember.averageScore > guildMetrics.guildAverageScore ? "#10b981" : "#f59e0b",
+                          color: "white"
+                        }}
+                      >
+                        {selectedMember.averageScore > guildMetrics.guildAverageScore ? "Above Average" : "Below Average"}
+                      </div>
+                    </div>
+                    <div className="text-sm space-y-1" style={{ color: "var(--color-muted)" }}>
+                      <div>• 7-Day Average: {selectedMember.averageScore > 0 ? selectedMember.averageScore.toFixed(0) : "N/A"}</div>
+                      <div>• Guild Average: {guildMetrics.guildAverageScore.toFixed(0)}</div>
+                      <div>• Highest Score: {selectedMember.highestScore.toLocaleString()}</div>
+                      <div>• Lowest Score: {selectedMember.lowestScore > 0 ? selectedMember.lowestScore.toLocaleString() : "N/A"}</div>
+                      <div>• Consistency: {selectedMember.consistency > 0 ? selectedMember.consistency.toFixed(0) : "N/A"}% (lower variance = more consistent)</div>
+                    </div>
+                  </div>
+
+                  {/* Experience & Tenure */}
+                  <div
+                    className="p-4 rounded-lg"
+                    style={{
+                      backgroundColor: "var(--color-bg)",
+                      border: "1px solid var(--color-border)",
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <FaUsers size={20} style={{ color: "#3b82f6" }} />
+                        <span className="font-semibold" style={{ color: "var(--color-foreground)" }}>
+                          Experience & Tenure
+                        </span>
+                      </div>
+                      <div
+                        className="px-3 py-1 rounded text-sm font-bold"
+                        style={{
+                          backgroundColor: selectedMember.totalEntries >= 20 ? "#10b981" :
+                                         selectedMember.totalEntries >= 10 ? "#f59e0b" : "#ef4444",
+                          color: "white"
+                        }}
+                      >
+                        {selectedMember.totalEntries >= 20 ? "Veteran" :
+                         selectedMember.totalEntries >= 10 ? "Experienced" : "New"}
+                      </div>
+                    </div>
+                    <div className="text-sm space-y-1" style={{ color: "var(--color-muted)" }}>
+                      <div>• Total Events: {selectedMember.totalEntries}</div>
+                      <div>• Estimated Tenure: ~{calculateMemberTenure(selectedMember)} days</div>
+                      <div>• Role: {selectedMember.role}</div>
+                      <div>• Events per Week: {((selectedMember.totalEntries / Math.max(calculateMemberTenure(selectedMember), 1)) * 7).toFixed(1)}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Castle Performance Breakdown */}
+              {selectedMember.bestCastleScores && Object.keys(selectedMember.bestCastleScores).length > 0 && (
+                <div>
+                  <h3 className="text-lg font-bold mb-4" style={{ color: "var(--color-foreground)" }}>
+                    Best Scores by Castle
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {Object.entries(selectedMember.bestCastleScores)
+                      .sort(([, scoreA], [, scoreB]) => (scoreB as number) - (scoreA as number))
+                      .map(([castle, score]) => (
+                        <div
+                          key={castle}
+                          className="p-4 rounded-lg flex items-center justify-between"
+                          style={{
+                            backgroundColor: "var(--color-bg)",
+                            border: "1px solid var(--color-border)",
+                          }}
+                        >
+                          <div>
+                            <div className="font-medium" style={{ color: "var(--color-foreground)" }}>
+                              {castle}
+                            </div>
+                            <div className="text-xs" style={{ color: "var(--color-muted)" }}>
+                              Personal Best
+                            </div>
+                          </div>
+                          <div className="text-2xl font-bold" style={{ color: "#8b5cf6" }}>
+                            {(score as number).toLocaleString()}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Recommendation */}
+              <div
+                className="p-5 rounded-lg"
+                style={{
+                  backgroundColor: getRiskLevel(selectedMember.riskScore).bgColor,
+                  border: `2px solid ${getRiskLevel(selectedMember.riskScore).color}`,
+                }}
+              >
+                <div className="flex items-start gap-3">
+                  <FaExclamationTriangle size={24} style={{ color: getRiskLevel(selectedMember.riskScore).color }} />
+                  <div>
+                    <div className="font-bold text-lg mb-2" style={{ color: "var(--color-foreground)" }}>
+                      Recommendation
+                    </div>
+                    <div className="text-sm space-y-2" style={{ color: "var(--color-foreground)" }}>
+                      {selectedMember.riskScore >= 100 && (
+                        <>
+                          <p>⚠️ <strong>CRITICAL RISK:</strong> This member shows severe attendance issues with low participation rate.</p>
+                          <p>• Consider immediate intervention or removal</p>
+                          <p>• Has {selectedMember.totalEntries} entries with only {selectedMember.attendanceRate.toFixed(0)}% attendance</p>
+                        </>
+                      )}
+                      {selectedMember.riskScore >= 50 && selectedMember.riskScore < 100 && (
+                        <>
+                          <p>⚠️ <strong>HIGH RISK:</strong> This member requires attention due to inconsistent participation.</p>
+                          <p>• Schedule a check-in to understand issues</p>
+                          <p>• Set clear attendance expectations</p>
+                          <p>• Monitor closely for next 2 weeks</p>
+                        </>
+                      )}
+                      {selectedMember.riskScore >= 20 && selectedMember.riskScore < 50 && (
+                        <>
+                          <p>ℹ️ <strong>MODERATE RISK:</strong> Performance is acceptable but could improve.</p>
+                          <p>• Encourage more consistent participation</p>
+                          <p>• Current attendance: {selectedMember.attendanceRate.toFixed(0)}% (target: 80%+)</p>
+                        </>
+                      )}
+                      {selectedMember.riskScore < 20 && (
+                        <>
+                          <p>✅ <strong>LOW RISK:</strong> This member is performing well.</p>
+                          <p>• Maintain current engagement level</p>
+                          <p>• Consider for leadership roles or mentoring</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div 
+              className="sticky bottom-0 flex justify-end gap-3 p-4 border-t"
+              style={{
+                borderColor: "var(--color-border)",
+                backgroundColor: "var(--color-surface)",
+              }}
+            >
+              <button
+                onClick={() => setShowRiskModal(false)}
+                className="px-6 py-2 rounded-lg hover:opacity-80"
+                style={{
+                  backgroundColor: "var(--color-primary)",
+                  color: "white",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

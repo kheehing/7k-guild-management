@@ -40,7 +40,8 @@ export default function CaptureEntryModal({ isOpen, onClose }: CaptureEntryModal
   const [isCapturing, setIsCapturing] = useState(false);
   const [autoExtract, setAutoExtract] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [serviceStatus, setServiceStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [serviceStatus, setServiceStatus] = useState<'checking' | 'online' | 'offline' | 'warming'>('checking');
+  const [serviceResponseTime, setServiceResponseTime] = useState<number | null>(null);
   const [castleName, setCastleName] = useState<string>('');
   const [allMembers, setAllMembers] = useState<Member[]>([]);
   const [enteredMembers, setEnteredMembers] = useState<Member[]>([]);
@@ -58,19 +59,33 @@ export default function CaptureEntryModal({ isOpen, onClose }: CaptureEntryModal
   // Check OCR service health
   useEffect(() => {
     const checkService = async () => {
+      const startTime = Date.now();
       try {
-        const response = await fetch(`${OCR_SERVICE_URL}/health`);
+        const response = await fetch(`${OCR_SERVICE_URL}/health`, {
+          signal: AbortSignal.timeout(30000), // 30 second timeout
+        });
+        const responseTime = Date.now() - startTime;
+        setServiceResponseTime(responseTime);
+        
         if (response.ok) {
-          setServiceStatus('online');
+          // If response time is slow, service might be warming up
+          if (responseTime > 5000) {
+            setServiceStatus('warming');
+            // Check again in 3 seconds to see if it's warmed up
+            setTimeout(checkService, 3000);
+          } else {
+            setServiceStatus('online');
+          }
         } else {
           setServiceStatus('offline');
         }
       } catch (error) {
         setServiceStatus('offline');
+        setServiceResponseTime(null);
       }
     };
     checkService();
-    const interval = setInterval(checkService, 10000);
+    const interval = setInterval(checkService, 15000); // Check every 15 seconds
     return () => clearInterval(interval);
   }, []);
 
@@ -590,18 +605,79 @@ export default function CaptureEntryModal({ isOpen, onClose }: CaptureEntryModal
           </div>
 
           {/* OCR Service Status */}
-          <div className="flex items-center gap-2">
-            <div 
-              className="w-3 h-3 rounded-full"
-              style={{
-                backgroundColor: serviceStatus === 'online' ? '#10b981' : 
-                               serviceStatus === 'offline' ? '#ef4444' : '#eab308'
-              }}
-            />
-            <span style={{ color: "var(--color-foreground)" }}>
-              OCR Service: {serviceStatus === 'online' ? 'Online' : 
-                          serviceStatus === 'offline' ? 'Offline' : 'Checking...'}
-            </span>
+          <div 
+            className="p-4 rounded-lg"
+            style={{
+              backgroundColor: serviceStatus === 'online' ? 'rgba(16, 185, 129, 0.1)' :
+                             serviceStatus === 'warming' ? 'rgba(234, 179, 8, 0.1)' :
+                             serviceStatus === 'offline' ? 'rgba(239, 68, 68, 0.1)' : 
+                             'rgba(245, 158, 11, 0.1)',
+              border: `1px solid ${
+                serviceStatus === 'online' ? '#10b981' :
+                serviceStatus === 'warming' ? '#eab308' :
+                serviceStatus === 'offline' ? '#ef4444' : '#f59e0b'
+              }`,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div 
+                    className={`w-4 h-4 rounded-full ${serviceStatus === 'checking' || serviceStatus === 'warming' ? 'animate-pulse' : ''}`}
+                    style={{
+                      backgroundColor: serviceStatus === 'online' ? '#10b981' : 
+                                     serviceStatus === 'warming' ? '#eab308' :
+                                     serviceStatus === 'offline' ? '#ef4444' : '#f59e0b'
+                    }}
+                  />
+                  {(serviceStatus === 'checking' || serviceStatus === 'warming') && (
+                    <div 
+                      className="absolute inset-0 w-4 h-4 rounded-full animate-ping"
+                      style={{
+                        backgroundColor: serviceStatus === 'warming' ? '#eab308' : '#f59e0b',
+                        opacity: 0.5,
+                      }}
+                    />
+                  )}
+                </div>
+                <div>
+                  <div className="font-medium" style={{ color: "var(--color-foreground)" }}>
+                    OCR Service Status
+                  </div>
+                  <div className="text-sm" style={{ color: "var(--color-muted)" }}>
+                    {serviceStatus === 'online' && '✓ Ready to extract data'}
+                    {serviceStatus === 'warming' && '⏳ Waking up... (this may take 30-60 seconds on first use)'}
+                    {serviceStatus === 'offline' && '✗ Service unavailable - please check connection'}
+                    {serviceStatus === 'checking' && '🔍 Checking service availability...'}
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div 
+                  className="px-3 py-1.5 rounded-lg text-sm font-bold"
+                  style={{
+                    backgroundColor: serviceStatus === 'online' ? '#10b981' :
+                                   serviceStatus === 'warming' ? '#eab308' :
+                                   serviceStatus === 'offline' ? '#ef4444' : '#f59e0b',
+                    color: 'white',
+                  }}
+                >
+                  {serviceStatus === 'online' ? 'ONLINE' :
+                   serviceStatus === 'warming' ? 'WARMING' :
+                   serviceStatus === 'offline' ? 'OFFLINE' : 'CHECKING'}
+                </div>
+                {serviceResponseTime !== null && serviceStatus === 'online' && (
+                  <div className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>
+                    Response: {serviceResponseTime}ms
+                  </div>
+                )}
+                {serviceStatus === 'warming' && serviceResponseTime !== null && (
+                  <div className="text-xs mt-1" style={{ color: "#eab308" }}>
+                    {(serviceResponseTime / 1000).toFixed(1)}s elapsed
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Capture Controls */}
@@ -610,11 +686,12 @@ export default function CaptureEntryModal({ isOpen, onClose }: CaptureEntryModal
               <button
                 onClick={startScreenCapture}
                 disabled={serviceStatus !== 'online'}
-                className="flex items-center gap-2 px-6 py-3 rounded-lg hover:opacity-90 disabled:opacity-50"
+                className="flex items-center gap-2 px-6 py-3 rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   backgroundColor: "var(--color-primary)",
                   color: "white",
                 }}
+                title={serviceStatus !== 'online' ? 'Waiting for OCR service to be ready...' : 'Start capturing your screen'}
               >
                 <FaVideo />
                 Start Screen Capture
