@@ -9,7 +9,20 @@ import re
 import os
 
 app = Flask(__name__)
-CORS(app)
+# Configure CORS to allow requests from Vercel and localhost
+CORS(app, resources={
+    r"/*": {
+        "origins": [
+            "https://7k-guild-management.vercel.app",
+            "https://*.vercel.app",  # All Vercel preview deployments
+            "http://localhost:3000",
+            "http://127.0.0.1:3000"
+        ],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": True
+    }
+})
 
 # Try to find Tesseract automatically
 tesseract_paths = [
