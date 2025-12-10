@@ -22,5 +22,8 @@ COPY . .
 # Expose port
 EXPOSE 5000
 
-# Run the application
-CMD ["python", "ocr_service.py"]
+# Set environment variable for Tesseract
+ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata/
+
+# Run with gunicorn for production (Render uses $PORT env var)
+CMD gunicorn -b 0.0.0.0:$PORT ocr_service:app --timeout 120 --workers 2
